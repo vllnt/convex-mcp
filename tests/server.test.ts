@@ -77,7 +77,7 @@ async function parseSSEResponse(response: Response): Promise<any> {
   const text = await response.text();
   const dataLine = text.split("\n").find((line) => line.startsWith("data: "));
   if (!dataLine) throw new Error("No data line in SSE response: " + text);
-  return JSON.parse(dataLine.replace("data: ", ""));
+  return JSON.parse(dataLine.slice(6));
 }
 
 describe("createMCPServer", () => {
@@ -260,6 +260,20 @@ describe("handler", () => {
     expect(data.result.content[0].text).toBe("Function execution failed");
     expect(data.result.content[0].text).not.toContain("user@corp.com");
     expect(data.result.isError).toBe(true);
+  });
+});
+
+describe("GET handler", () => {
+  it("returns 401 without API key", async () => {
+    const server = createTestServer();
+    const handler = server.handler();
+
+    const request = new Request("http://localhost/mcp", {
+      method: "GET",
+    });
+
+    const response = await handler.GET(request);
+    expect(response.status).toBe(401);
   });
 });
 

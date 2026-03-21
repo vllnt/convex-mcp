@@ -133,6 +133,20 @@ describe("convertValidator", () => {
     expect((jsonSchema as any).enum).toEqual(["a", "b", "c"]);
   });
 
+  it("converts union of numeric literals to z.union of z.literal (not z.enum)", () => {
+    const schema = convertValidator(makeValidator("union", {
+      members: [
+        makeValidator("literal", { value: 1 }),
+        makeValidator("literal", { value: 2 }),
+        makeValidator("literal", { value: 3 }),
+      ],
+    }));
+    expect(schema.parse(1)).toBe(1);
+    expect(schema.parse(2)).toBe(2);
+    expect(() => schema.parse(4)).toThrow();
+    expect(() => schema.parse("1")).toThrow();
+  });
+
   it("converts mixed union", () => {
     const schema = convertValidator(makeValidator("union", {
       members: [

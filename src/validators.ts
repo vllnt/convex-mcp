@@ -1,15 +1,5 @@
 import { z } from "zod";
-
-interface ConvexValidator {
-  kind: string;
-  isOptional: "required" | "optional";
-  tableName?: string;
-  value?: unknown;
-  fields?: Record<string, ConvexValidator>;
-  element?: ConvexValidator;
-  members?: ConvexValidator[];
-  key?: ConvexValidator;
-}
+import type { ConvexValidator } from "./types.js";
 
 export class UnsupportedValidatorError extends Error {
   constructor(kind: string) {
@@ -18,10 +8,10 @@ export class UnsupportedValidatorError extends Error {
   }
 }
 
-function isAllLiteralUnion(
+function isAllStringLiteralUnion(
   members: ConvexValidator[],
-): members is Array<ConvexValidator & { kind: "literal"; value: unknown }> {
-  return members.every((m) => m.kind === "literal");
+): boolean {
+  return members.every((m) => m.kind === "literal" && typeof m.value === "string");
 }
 
 function convertKind(validator: ConvexValidator): z.ZodTypeAny {
@@ -52,7 +42,7 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
       );
 
     case "literal":
-      return z.literal(validator.value as string | number | boolean);
+      return z.literal(validator.value as string | number | boolean | null);
 
     case "array": {
       if (!validator.element) {
@@ -63,12 +53,11 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
 
     case "object": {
       if (!validator.fields) {
-        throw new UnsupportedValidatorError("object (missing fields)");
+        return z.object({});
       }
       const shape: Record<string, z.ZodTypeAny> = {};
       for (const [key, field] of Object.entries(validator.fields)) {
-        const converted = convertKind(field);
-        shape[key] = field.isOptional === "optional" ? converted.optional() : converted;
+        shape[key] = convertValidator(field);
       }
       return z.object(shape);
     }
@@ -77,8 +66,8 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
       if (!validator.members || validator.members.length === 0) {
         throw new UnsupportedValidatorError("union (missing members)");
       }
-      if (isAllLiteralUnion(validator.members)) {
-        const values = validator.members.map((m) => m.value);
+      if (isAllStringLiteralUnion(validator.members)) {
+        const values = validator.members.map((m) => m.value as string);
         return z.enum(values as [string, ...string[]]);
       }
       const converted = validator.members.map((m) => convertValidator(m));
@@ -127,8 +116,7 @@ export function convexArgsToZod(
   }
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const [key, field] of Object.entries(argsValidator.fields)) {
-    const converted = convertKind(field);
-    shape[key] = field.isOptional === "optional" ? converted.optional() : converted;
+    shape[key] = convertValidator(field);
   }
   return z.object(shape);
 }

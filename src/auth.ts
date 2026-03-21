@@ -7,7 +7,8 @@ export function extractApiKey(request: Request): string | undefined {
   if (authHeader.startsWith("Bearer ")) {
     return authHeader.slice(7);
   }
-  return authHeader;
+
+  return undefined;
 }
 
 export async function validateRequest(
@@ -20,7 +21,7 @@ export async function validateRequest(
     return {
       valid: false,
       response: new Response(
-        JSON.stringify({ error: "Missing API key. Provide an Authorization header." }),
+        JSON.stringify({ error: "Missing or malformed API key. Use Authorization: Bearer <key>." }),
         { status: 401, headers: { "Content-Type": "application/json" } },
       ),
     };

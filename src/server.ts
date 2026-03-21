@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ConvexHttpClient } from "convex/browser";
 import { convexArgsToZod } from "./validators.js";
 import { validateRequest } from "./auth.js";
-import type { ServerConfig, HandlerOptions, ConvexMCPServer, ToolDef, ResourceDef } from "./types.js";
+import type { ServerConfig, ConvexMCPServer, ToolDef, ResourceDef } from "./types.js";
 
 export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   if (!config.auth?.validate) {
@@ -13,13 +13,14 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
     );
   }
 
-  const convexUrl = config.convexUrl ?? process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!convexUrl) {
+  const resolvedUrl = config.convexUrl ?? process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!resolvedUrl) {
     throw new Error(
       "Convex URL not found. Set CONVEX_URL or NEXT_PUBLIC_CONVEX_URL environment variable, " +
       "or pass convexUrl to createMCPServer().",
     );
   }
+  const convexUrl: string = resolvedUrl;
 
   const serverName = config.name ?? "convex-mcp";
   const serverVersion = config.version ?? "0.1.0";
@@ -33,7 +34,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
       version: serverVersion,
     });
 
-    const client = new ConvexHttpClient(convexUrl!);
+    const client = new ConvexHttpClient(convexUrl);
     if (convexToken) {
       client.setAuth(convexToken);
     }
@@ -49,7 +50,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   }
 
   return {
-    handler(_options?: HandlerOptions) {
+    handler() {
       return {
         async GET(request: Request): Promise<Response> {
           const authResult = await validateRequest(request, config.auth);
@@ -92,10 +93,6 @@ function registerTools(
   for (const [name, toolDef] of Object.entries(tools)) {
     const zodSchema = toolDef.args ? convexArgsToZod(toolDef.args) : undefined;
 
-    const toolConfig: Record<string, unknown> = {};
-    if (toolDef.description) toolConfig.description = toolDef.description;
-    if (zodSchema) toolConfig.inputSchema = zodSchema;
-
     mcpServer.tool(
       name,
       toolDef.description ?? "",
@@ -113,11 +110,14 @@ function registerTools(
             case "action":
               result = await client.action(toolDef.ref as any, args as any);
               break;
+            default:
+              throw new Error(`Unknown function type: ${toolDef.type as string}`);
           }
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) ?? "null" }],
+            content: [{ type: "text" as const, text: JSON.stringify(result ?? null, null, 2) }],
           };
-        } catch {
+        } catch (error) {
+          console.error("[convex-mcp] tool execution failed", { tool: name, error });
           return {
             content: [{ type: "text" as const, text: "Function execution failed" }],
             isError: true,
@@ -152,11 +152,12 @@ function registerResources(
           return {
             contents: [{
               uri: uri.href,
-              text: JSON.stringify(result, null, 2) ?? "null",
+              text: JSON.stringify(result ?? null, null, 2),
               mimeType: "application/json",
             }],
           };
-        } catch {
+        } catch (error) {
+          console.error("[convex-mcp] resource read failed", { resource: uriPattern, error });
           return {
             contents: [{
               uri: uri.href,

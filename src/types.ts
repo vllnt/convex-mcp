@@ -1,6 +1,4 @@
-import type { z } from "zod";
-
-interface ConvexValidator {
+export interface ConvexValidator {
   kind: string;
   isOptional: "required" | "optional";
   tableName?: string;
@@ -40,18 +38,9 @@ export interface ServerConfig {
   version?: string;
 }
 
-export interface HandlerOptions {
-  allowedOrigins?: string[];
-}
-
 export interface ConvexMCPServer {
-  handler: (options?: HandlerOptions) => {
+  handler: () => {
     GET: (request: Request) => Promise<Response>;
     POST: (request: Request) => Promise<Response>;
   };
 }
-
-export type {
-  ConvexValidator,
-  z as ZodType,
-};

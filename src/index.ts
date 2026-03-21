@@ -8,7 +8,6 @@ export type {
   AuthConfig,
   ToolDef,
   ResourceDef,
-  HandlerOptions,
   ConvexMCPServer,
   FunctionType,
   ConvexValidator,
