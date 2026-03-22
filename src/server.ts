@@ -4,6 +4,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { convexArgsToZod } from "./validators.js";
 import { validateRequest } from "./auth.js";
 import type { ServerConfig, ConvexMCPServer, ConvexClient, ToolDef, ResourceDef } from "./types.js";
+import type { z } from "zod";
 
 function createDefaultClient(convexUrl: string, convexToken?: string): ConvexClient {
   const client = new ConvexHttpClient(convexUrl);
@@ -13,7 +14,22 @@ function createDefaultClient(convexUrl: string, convexToken?: string): ConvexCli
   return client;
 }
 
+interface PreparedTool {
+  name: string;
+  description: string;
+  zodShape: Record<string, z.ZodTypeAny>;
+  toolDef: ToolDef;
+}
+
+interface PreparedResource {
+  uriPattern: string;
+  template: ResourceTemplate;
+  description: string | undefined;
+  resourceDef: ResourceDef;
+}
+
 export function createMCPServer(config: ServerConfig): ConvexMCPServer {
+  // Defense-in-depth: auth is typed as required but JS callers may omit it
   if (!config.auth?.validate) {
     throw new Error(
       "Auth is required. Provide auth.validate to createMCPServer(). " +
@@ -23,20 +39,29 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
   const injectedClient = config.client;
 
-  let convexUrl: string | undefined;
+  if (injectedClient && config.auth.convexToken) {
+    throw new Error(
+      "Cannot use both 'client' and 'auth.convexToken'. When providing a custom client, " +
+      "handle auth token propagation in your client implementation directly.",
+    );
+  }
+
+  let resolvedConvexUrl: string | undefined;
   if (!injectedClient) {
-    const resolvedUrl = config.convexUrl ?? process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-    if (!resolvedUrl) {
+    resolvedConvexUrl = config.convexUrl ?? process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!resolvedConvexUrl) {
       throw new Error(
         "Convex URL not found. Set CONVEX_URL or NEXT_PUBLIC_CONVEX_URL environment variable, " +
         "or pass convexUrl or client to createMCPServer().",
       );
     }
-    convexUrl = resolvedUrl;
   }
 
   const serverName = config.name ?? "convex-mcp";
   const serverVersion = config.version ?? "0.1.0";
+
+  const preparedTools = prepareTtools(config.tools ?? {});
+  const preparedResources = prepareResources(config.resources ?? {});
 
   function createServerAndTransport(convexToken?: string): {
     mcpServer: McpServer;
@@ -47,10 +72,10 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
       version: serverVersion,
     });
 
-    const client = injectedClient ?? createDefaultClient(convexUrl!, convexToken);
+    const client = injectedClient ?? createDefaultClient(resolvedConvexUrl!, convexToken);
 
-    registerTools(mcpServer, client, config.tools ?? {});
-    registerResources(mcpServer, client, config.resources ?? {});
+    registerTools(mcpServer, client, preparedTools);
+    registerResources(mcpServer, client, preparedResources);
 
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -95,30 +120,49 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   };
 }
 
+function prepareTtools(tools: Record<string, ToolDef>): PreparedTool[] {
+  return Object.entries(tools).map(([name, toolDef]) => {
+    const zodSchema = toolDef.args ? convexArgsToZod(toolDef.args) : undefined;
+    return {
+      name,
+      description: toolDef.description ?? "",
+      zodShape: zodSchema?.shape ?? {},
+      toolDef,
+    };
+  });
+}
+
+function prepareResources(resources: Record<string, ResourceDef>): PreparedResource[] {
+  return Object.entries(resources).map(([uriPattern, resourceDef]) => ({
+    uriPattern,
+    template: new ResourceTemplate(uriPattern, { list: undefined }),
+    description: resourceDef.description,
+    resourceDef,
+  }));
+}
+
 function registerTools(
   mcpServer: McpServer,
   client: ConvexClient,
-  tools: Record<string, ToolDef>,
+  tools: PreparedTool[],
 ): void {
-  for (const [name, toolDef] of Object.entries(tools)) {
-    const zodSchema = toolDef.args ? convexArgsToZod(toolDef.args) : undefined;
-
+  for (const { name, description, zodShape, toolDef } of tools) {
     mcpServer.tool(
       name,
-      toolDef.description ?? "",
-      zodSchema?.shape ?? {},
+      description,
+      zodShape,
       async (args) => {
         try {
           let result: unknown;
           switch (toolDef.type) {
             case "query":
-              result = await client.query(toolDef.ref as any, args as any);
+              result = await client.query(toolDef.ref, args as Record<string, unknown>);
               break;
             case "mutation":
-              result = await client.mutation(toolDef.ref as any, args as any);
+              result = await client.mutation(toolDef.ref, args as Record<string, unknown>);
               break;
             case "action":
-              result = await client.action(toolDef.ref as any, args as any);
+              result = await client.action(toolDef.ref, args as Record<string, unknown>);
               break;
             default:
               throw new Error(`Unknown function type: ${toolDef.type as string}`);
@@ -141,24 +185,20 @@ function registerTools(
 function registerResources(
   mcpServer: McpServer,
   client: ConvexClient,
-  resources: Record<string, ResourceDef>,
+  resources: PreparedResource[],
 ): void {
-  for (const [uriPattern, resourceDef] of Object.entries(resources)) {
-    const template = new ResourceTemplate(uriPattern, {
-      list: undefined,
-    });
-
+  for (const { uriPattern, template, description, resourceDef } of resources) {
     mcpServer.resource(
       uriPattern,
       template,
       {
-        description: resourceDef.description,
+        description,
         mimeType: "application/json",
       },
       async (uri, params) => {
         try {
           const args = params as Record<string, unknown>;
-          const result = await client.query(resourceDef.ref as any, args as any);
+          const result = await client.query(resourceDef.ref, args);
           return {
             contents: [{
               uri: uri.href,
@@ -168,13 +208,7 @@ function registerResources(
           };
         } catch (error) {
           console.error("[convex-mcp] resource read failed", { resource: uriPattern, error });
-          return {
-            contents: [{
-              uri: uri.href,
-              text: JSON.stringify({ error: "Resource read failed" }),
-              mimeType: "application/json",
-            }],
-          };
+          throw error;
         }
       },
     );

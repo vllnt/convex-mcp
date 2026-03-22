@@ -11,7 +11,7 @@ export class UnsupportedValidatorError extends Error {
 function isAllStringLiteralUnion(
   members: ConvexValidator[],
 ): boolean {
-  return members.every((m) => m.kind === "literal" && typeof m.value === "string");
+  return members.length > 1 && members.every((m) => m.kind === "literal" && typeof m.value === "string");
 }
 
 function convertKind(validator: ConvexValidator): z.ZodTypeAny {
@@ -82,6 +82,10 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
     case "record": {
       if (!validator.key || !validator.value) {
         throw new UnsupportedValidatorError("record (missing key or value)");
+      }
+      const keyKind = validator.key.kind;
+      if (keyKind !== "string" && keyKind !== "id") {
+        throw new UnsupportedValidatorError(`record key must be string or id, got "${keyKind}"`);
       }
       return z.record(
         convertValidator(validator.key) as z.ZodType<string>,

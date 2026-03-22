@@ -24,10 +24,19 @@ export interface ResourceDef {
   description?: string;
 }
 
+/**
+ * Injectable Convex client interface. Compatible with both ConvexHttpClient
+ * (production) and convex-test's `t` (testing).
+ *
+ * Uses `any` for functionRef because Convex's FunctionReference is a complex
+ * generic that cannot be expressed without importing convex internals.
+ */
 export interface ConvexClient {
-  query(functionRef: any, args?: any): Promise<any>;
-  mutation(functionRef: any, args?: any): Promise<any>;
-  action(functionRef: any, args?: any): Promise<any>;
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  query(functionRef: any, ...args: any[]): Promise<any>;
+  mutation(functionRef: any, ...args: any[]): Promise<any>;
+  action(functionRef: any, ...args: any[]): Promise<any>;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 export interface AuthConfig {

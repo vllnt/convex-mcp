@@ -30,7 +30,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit --project tsconfig.check.json",
     "prepublishOnly": "pnpm run build"
   },
   "keywords": [

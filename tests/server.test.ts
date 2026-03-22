@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMCPServer } from "../src/server.js";
 import { query, mutation, action } from "../src/tool.js";
 import { resource } from "../src/resource.js";
@@ -79,6 +79,14 @@ async function parseSSEResponse(response: Response): Promise<any> {
   if (!dataLine) throw new Error("No data line in SSE response: " + text);
   return JSON.parse(dataLine.slice(6));
 }
+
+beforeEach(async () => {
+  const mockClient = await getMockClient();
+  mockClient.query.mockReset().mockResolvedValue({ id: "1", name: "Test Project" });
+  mockClient.mutation.mockReset().mockResolvedValue({ id: "2" });
+  mockClient.action.mockReset().mockResolvedValue("action-result");
+  mockClient.setAuth.mockReset();
+});
 
 describe("createMCPServer", () => {
   it("throws without auth config (AC-9)", () => {
@@ -197,7 +205,6 @@ describe("handler", () => {
     const server = createTestServer();
     const handler = server.handler();
     const mockClient = await getMockClient();
-    mockClient.query.mockClear();
 
     const response = await handler.POST(mcpRequest("tools/call", {
       name: "list_projects",
@@ -214,7 +221,6 @@ describe("handler", () => {
     const server = createTestServer();
     const handler = server.handler();
     const mockClient = await getMockClient();
-    mockClient.mutation.mockClear();
 
     const response = await handler.POST(mcpRequest("tools/call", {
       name: "create_project",
@@ -231,7 +237,6 @@ describe("handler", () => {
     const server = createTestServer();
     const handler = server.handler();
     const mockClient = await getMockClient();
-    mockClient.action.mockClear();
 
     const response = await handler.POST(mcpRequest("tools/call", {
       name: "run_task",
@@ -298,7 +303,6 @@ describe("resource read", () => {
     const server = createTestServer();
     const handler = server.handler();
     const mockClient = await getMockClient();
-    mockClient.query.mockClear();
     mockClient.query.mockResolvedValueOnce({ id: "space1", name: "My Space" });
 
     const response = await handler.POST(mcpRequest("resources/read", {
@@ -307,7 +311,7 @@ describe("resource read", () => {
     expect(response.status).toBe(200);
   });
 
-  it("returns error content when resource read fails", async () => {
+  it("returns error when resource read fails", async () => {
     const server = createTestServer();
     const handler = server.handler();
     const mockClient = await getMockClient();
@@ -318,7 +322,7 @@ describe("resource read", () => {
     }));
     expect(response.status).toBe(200);
     const data = await parseSSEResponse(response);
-    expect(data.result).toBeDefined();
+    expect(data.error ?? data.result?.isError).toBeTruthy();
   });
 });
 
@@ -381,9 +385,43 @@ describe("auth with convexToken", () => {
 
     const handler = server.handler();
     const mockClient = await getMockClient();
-    mockClient.setAuth.mockClear();
 
     await handler.POST(mcpRequest("tools/list"));
     expect(mockClient.setAuth).toHaveBeenCalledWith("convex-jwt-token");
+  });
+
+  it("does NOT call setAuth when convexToken returns undefined", async () => {
+    const server = createMCPServer({
+      auth: {
+        validate: async () => true,
+        convexToken: async () => undefined,
+      },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        test: query(null, { description: "Test" }),
+      },
+    });
+
+    const handler = server.handler();
+    const mockClient = await getMockClient();
+
+    await handler.POST(mcpRequest("tools/list"));
+    expect(mockClient.setAuth).not.toHaveBeenCalled();
+  });
+
+  it("throws when both client and convexToken are provided", () => {
+    expect(() =>
+      createMCPServer({
+        auth: {
+          validate: async () => true,
+          convexToken: async () => "token",
+        },
+        client: {
+          query: async () => null,
+          mutation: async () => null,
+          action: async () => null,
+        },
+      }),
+    ).toThrow("Cannot use both 'client' and 'auth.convexToken'");
   });
 });
