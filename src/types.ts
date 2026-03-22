@@ -24,6 +24,12 @@ export interface ResourceDef {
   description?: string;
 }
 
+export interface ConvexClient {
+  query(functionRef: any, args?: any): Promise<any>;
+  mutation(functionRef: any, args?: any): Promise<any>;
+  action(functionRef: any, args?: any): Promise<any>;
+}
+
 export interface AuthConfig {
   validate: (apiKey: string) => Promise<boolean> | boolean;
   convexToken?: (apiKey: string) => Promise<string | undefined> | string | undefined;
@@ -34,6 +40,7 @@ export interface ServerConfig {
   tools?: Record<string, ToolDef>;
   resources?: Record<string, ResourceDef>;
   convexUrl?: string;
+  client?: ConvexClient;
   name?: string;
   version?: string;
 }

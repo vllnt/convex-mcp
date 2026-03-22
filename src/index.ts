@@ -9,6 +9,7 @@ export type {
   ToolDef,
   ResourceDef,
   ConvexMCPServer,
+  ConvexClient,
   FunctionType,
   ConvexValidator,
 } from "./types.js";

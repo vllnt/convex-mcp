@@ -3,7 +3,15 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ConvexHttpClient } from "convex/browser";
 import { convexArgsToZod } from "./validators.js";
 import { validateRequest } from "./auth.js";
-import type { ServerConfig, ConvexMCPServer, ToolDef, ResourceDef } from "./types.js";
+import type { ServerConfig, ConvexMCPServer, ConvexClient, ToolDef, ResourceDef } from "./types.js";
+
+function createDefaultClient(convexUrl: string, convexToken?: string): ConvexClient {
+  const client = new ConvexHttpClient(convexUrl);
+  if (convexToken) {
+    client.setAuth(convexToken);
+  }
+  return client;
+}
 
 export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   if (!config.auth?.validate) {
@@ -13,14 +21,19 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
     );
   }
 
-  const resolvedUrl = config.convexUrl ?? process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!resolvedUrl) {
-    throw new Error(
-      "Convex URL not found. Set CONVEX_URL or NEXT_PUBLIC_CONVEX_URL environment variable, " +
-      "or pass convexUrl to createMCPServer().",
-    );
+  const injectedClient = config.client;
+
+  let convexUrl: string | undefined;
+  if (!injectedClient) {
+    const resolvedUrl = config.convexUrl ?? process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!resolvedUrl) {
+      throw new Error(
+        "Convex URL not found. Set CONVEX_URL or NEXT_PUBLIC_CONVEX_URL environment variable, " +
+        "or pass convexUrl or client to createMCPServer().",
+      );
+    }
+    convexUrl = resolvedUrl;
   }
-  const convexUrl: string = resolvedUrl;
 
   const serverName = config.name ?? "convex-mcp";
   const serverVersion = config.version ?? "0.1.0";
@@ -34,10 +47,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
       version: serverVersion,
     });
 
-    const client = new ConvexHttpClient(convexUrl);
-    if (convexToken) {
-      client.setAuth(convexToken);
-    }
+    const client = injectedClient ?? createDefaultClient(convexUrl!, convexToken);
 
     registerTools(mcpServer, client, config.tools ?? {});
     registerResources(mcpServer, client, config.resources ?? {});
@@ -87,7 +97,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
 function registerTools(
   mcpServer: McpServer,
-  client: ConvexHttpClient,
+  client: ConvexClient,
   tools: Record<string, ToolDef>,
 ): void {
   for (const [name, toolDef] of Object.entries(tools)) {
@@ -130,7 +140,7 @@ function registerTools(
 
 function registerResources(
   mcpServer: McpServer,
-  client: ConvexHttpClient,
+  client: ConvexClient,
   resources: Record<string, ResourceDef>,
 ): void {
   for (const [uriPattern, resourceDef] of Object.entries(resources)) {
