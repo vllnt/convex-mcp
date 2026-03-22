@@ -51,6 +51,9 @@
     "url": "https://github.com/vllnt/convex-mcp/issues"
   },
   "homepage": "https://github.com/vllnt/convex-mcp#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "peerDependencies": {
     "convex": ">=1.0.0"
   },
