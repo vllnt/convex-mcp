@@ -275,6 +275,95 @@ describe("GET handler", () => {
     const response = await handler.GET(request);
     expect(response.status).toBe(401);
   });
+
+  it("accepts valid auth and delegates to transport", async () => {
+    const server = createTestServer();
+    const handler = server.handler();
+
+    const request = new Request("http://localhost/mcp", {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer test-key",
+        "Accept": "application/json, text/event-stream",
+      },
+    });
+
+    const response = await handler.GET(request);
+    expect([200, 405]).toContain(response.status);
+  });
+});
+
+describe("resource read", () => {
+  it("returns resource content on successful read", async () => {
+    const server = createTestServer();
+    const handler = server.handler();
+    const mockClient = await getMockClient();
+    mockClient.query.mockClear();
+    mockClient.query.mockResolvedValueOnce({ id: "space1", name: "My Space" });
+
+    const response = await handler.POST(mcpRequest("resources/read", {
+      uri: "space://space1",
+    }));
+    expect(response.status).toBe(200);
+  });
+
+  it("returns error content when resource read fails", async () => {
+    const server = createTestServer();
+    const handler = server.handler();
+    const mockClient = await getMockClient();
+    mockClient.query.mockRejectedValueOnce(new Error("DB connection failed"));
+
+    const response = await handler.POST(mcpRequest("resources/read", {
+      uri: "space://space1",
+    }));
+    expect(response.status).toBe(200);
+    const data = await parseSSEResponse(response);
+    expect(data.result).toBeDefined();
+  });
+});
+
+describe("edge cases", () => {
+  it("handles unknown tool type at runtime", async () => {
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        bad_tool: {
+          ref: null,
+          type: "invalid" as any,
+          args: makeValidator("object", { fields: {} }),
+          description: "Bad tool",
+        },
+      },
+    });
+    const handler = server.handler();
+
+    const response = await handler.POST(mcpRequest("tools/call", {
+      name: "bad_tool",
+      arguments: {},
+    }));
+    expect(response.status).toBe(200);
+    const data = await parseSSEResponse(response);
+    expect(data.result.isError).toBe(true);
+    expect(data.result.content[0].text).toBe("Function execution failed");
+  });
+
+  it("rejects non-Bearer auth scheme", async () => {
+    const server = createTestServer();
+    const handler = server.handler();
+
+    const request = new Request("http://localhost/mcp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Basic dXNlcjpwYXNz",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+
+    const response = await handler.POST(request);
+    expect(response.status).toBe(401);
+  });
 });
 
 describe("auth with convexToken", () => {

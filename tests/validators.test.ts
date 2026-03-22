@@ -185,6 +185,31 @@ describe("convertValidator", () => {
     expect(() => convertValidator(makeValidator("futureType"))).toThrow(UnsupportedValidatorError);
     expect(() => convertValidator(makeValidator("futureType"))).toThrow("futureType");
   });
+
+  it("throws on array with missing element", () => {
+    expect(() => convertValidator(makeValidator("array"))).toThrow(UnsupportedValidatorError);
+  });
+
+  it("throws on union with missing members", () => {
+    expect(() => convertValidator(makeValidator("union", { members: [] }))).toThrow(UnsupportedValidatorError);
+  });
+
+  it("throws on record with missing key/value", () => {
+    expect(() => convertValidator(makeValidator("record"))).toThrow(UnsupportedValidatorError);
+    expect(() => convertValidator(makeValidator("record", { key: makeValidator("string") }))).toThrow(UnsupportedValidatorError);
+  });
+
+  it("handles object with no fields (returns empty object schema)", () => {
+    const schema = convertValidator(makeValidator("object"));
+    expect(schema.parse({})).toEqual({});
+  });
+
+  it("handles single-member union", () => {
+    const schema = convertValidator(makeValidator("union", {
+      members: [makeValidator("string")],
+    }));
+    expect(schema.parse("hello")).toBe("hello");
+  });
 });
 
 describe("convexArgsToZod", () => {
