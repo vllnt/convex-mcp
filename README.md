@@ -172,7 +172,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Author
 
-**vllnt** — [bntvllnt.com](https://bntvllnt.com) | [GitHub](https://github.com/vllnt)
+**vllnt** — [bntvllnt.com](https://bntvllnt.com) | [X](https://bntvllnt.com/x) | [Discord](https://bntvllnt.com/discord) | [GitHub](https://bntvllnt.com/github)
 
 ## License
 

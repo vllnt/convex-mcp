@@ -35,4 +35,4 @@ pnpm lint         # Linting
 
 ## Questions?
 
-Open a [GitHub discussion](https://github.com/vllnt/convex-mcp/discussions) or reach out via [bntvllnt.com](https://bntvllnt.com).
+Open a [GitHub discussion](https://github.com/vllnt/convex-mcp/discussions), join the [Discord](https://bntvllnt.com/discord), or reach out on [X](https://bntvllnt.com/x).

@@ -6,7 +6,7 @@ If you discover a security vulnerability in `@vllnt/convex-mcp`, please report i
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, reach out via DM on any social platform linked at [bntvllnt.com](https://bntvllnt.com), or open a [GitHub security advisory](https://github.com/vllnt/convex-mcp/security/advisories/new).
+Instead, reach out via [Discord](https://bntvllnt.com/discord), [X](https://bntvllnt.com/x), or open a [GitHub security advisory](https://github.com/vllnt/convex-mcp/security/advisories/new).
 
 We will respond promptly and coordinate a fix before any public disclosure.
 
