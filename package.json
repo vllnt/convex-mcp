@@ -42,7 +42,10 @@
     "llm",
     "tools"
   ],
-  "author": "vllnt",
+  "author": {
+    "name": "vllnt",
+    "url": "https://bntvllnt.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
