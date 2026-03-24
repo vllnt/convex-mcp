@@ -12,4 +12,7 @@ export type {
   ConvexClient,
   FunctionType,
   ConvexValidator,
+  CallContext,
+  OnCallResult,
+  LifecycleHooks,
 } from "./types.js";

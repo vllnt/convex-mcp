@@ -16,6 +16,9 @@ export interface ToolDef {
   type: FunctionType;
   args?: ConvexValidator;
   description?: string;
+  tags?: Record<string, string>;
+  timeout?: number;
+  onError?: (ctx: CallContext & { phase: "error" }) => Promise<OnCallResult | void> | OnCallResult | void;
 }
 
 export interface ResourceDef {
@@ -39,6 +42,29 @@ export interface ConvexClient {
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
+export interface CallContext {
+  requestId: string;
+  toolName: string;
+  toolDef: Omit<ToolDef, "ref" | "onError">;
+  args: Record<string, unknown>;
+  apiKey: string;
+  phase: "before" | "success" | "error";
+  result?: unknown;
+  error?: unknown;
+  durationMs?: number;
+  startedAt: number;
+}
+
+export interface OnCallResult {
+  abort?: boolean;
+  errorMessage?: string;
+  message?: string;
+}
+
+export interface LifecycleHooks {
+  onToolCall?: (ctx: CallContext) => Promise<OnCallResult | void> | OnCallResult | void;
+}
+
 export interface AuthConfig {
   validate: (apiKey: string) => Promise<boolean> | boolean;
   convexToken?: (apiKey: string) => Promise<string | undefined> | string | undefined;
@@ -50,6 +76,7 @@ export interface ServerConfig {
   resources?: Record<string, ResourceDef>;
   convexUrl?: string;
   client?: ConvexClient;
+  hooks?: LifecycleHooks;
   name?: string;
   version?: string;
 }

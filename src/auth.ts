@@ -14,7 +14,7 @@ export function extractApiKey(request: Request): string | undefined {
 export async function validateRequest(
   request: Request,
   auth: AuthConfig,
-): Promise<{ valid: true; convexToken?: string } | { valid: false; response: Response }> {
+): Promise<{ valid: true; convexToken?: string; apiKey: string } | { valid: false; response: Response }> {
   const apiKey = extractApiKey(request);
 
   if (!apiKey) {
@@ -43,5 +43,5 @@ export async function validateRequest(
     convexToken = await auth.convexToken(apiKey);
   }
 
-  return { valid: true, convexToken };
+  return { valid: true, convexToken, apiKey };
 }

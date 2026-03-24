@@ -1,8 +1,10 @@
 ---
 title: "Init convex-mcp package"
-status: active
+status: shipped
 created: 2026-03-21
+shipped: 2026-03-22
 estimate: 8h
+actual: 6h
 tier: standard
 issue: https://github.com/vllnt/convex-mcp/issues/1
 ---
@@ -484,6 +486,12 @@ Spec review applied: 2026-03-21. 4 perspectives: SDK/API Designer, Protocol Engi
 3 blocking issues found and resolved: (1) default-deny auth, (2) typed wrappers replace type strings, (3) generic error messages.
 Spec review merge applied: 2026-03-21. Follow-up blockers addressed in the spec: (4) explicit initialize lifecycle, (5) Streamable HTTP compliance, (6) resource template discovery, (7) validator coverage aligned with current Convex docs.
 
+### Ship Retro (2026-03-22)
+**Estimate vs Actual:** 8h → 6h (133% accuracy — shipped faster)
+**What worked:** WebStandardStreamableHTTPServerTransport discovery eliminated the riskiest assumption (Node adapter). Spec-first + 4-perspective review caught 3 blocking issues before code was written. Parallel research agents (MCP SDK + Convex) saved ~30min.
+**What didn't:** Node 18 CI failure — should have checked SDK runtime requirements before adding to matrix. Also, initial code review found dead code (toolConfig) and silent error swallowing that should have been caught during implementation.
+**Next time:** Run code review before first push, not after. Check SDK minimum Node version from package.json engines field before setting CI matrix.
+
 ## Progress
 
 | # | Scope Item | Status | Iteration |
@@ -510,3 +518,5 @@ Spec review merge applied: 2026-03-21. Follow-up blockers addressed in the spec:
 | plan | 2026-03-21T16:00:00Z | - | Created from issue #1 |
 | spec-review | 2026-03-21T16:30:00Z | - | 4 perspectives. 3 blocking fixes applied. |
 | ship | 2026-03-21T23:00:00Z | - | All 14 scope items implemented. 37 tests passing. |
+| review | 2026-03-22T00:00:00Z | - | Deep review (9 perspectives). 12 issues found, all fixed. |
+| done | 2026-03-22T15:00:00Z | 6h total | CI green. 39 tests. PR #2 ready to merge. |

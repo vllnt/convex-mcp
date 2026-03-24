@@ -1,9 +1,10 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ConvexHttpClient } from "convex/browser";
+import { randomUUID } from "node:crypto";
 import { convexArgsToZod } from "./validators.js";
 import { validateRequest } from "./auth.js";
-import type { ServerConfig, ConvexMCPServer, ConvexClient, ToolDef, ResourceDef } from "./types.js";
+import type { ServerConfig, ConvexMCPServer, ConvexClient, ToolDef, ResourceDef, LifecycleHooks, CallContext, OnCallResult } from "./types.js";
 import type { z } from "zod";
 
 function createDefaultClient(convexUrl: string, convexToken?: string): ConvexClient {
@@ -28,8 +29,17 @@ interface PreparedResource {
   resourceDef: ResourceDef;
 }
 
+function addRequestId(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set("X-Request-Id", requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function createMCPServer(config: ServerConfig): ConvexMCPServer {
-  // Defense-in-depth: auth is typed as required but JS callers may omit it
   if (!config.auth?.validate) {
     throw new Error(
       "Auth is required. Provide auth.validate to createMCPServer(). " +
@@ -59,11 +69,12 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
   const serverName = config.name ?? "convex-mcp";
   const serverVersion = config.version ?? "0.1.0";
+  const hooks = config.hooks;
 
-  const preparedTools = prepareTtools(config.tools ?? {});
+  const preparedTools = prepareTools(config.tools ?? {});
   const preparedResources = prepareResources(config.resources ?? {});
 
-  function createServerAndTransport(convexToken?: string): {
+  function createServerAndTransport(convexToken?: string, apiKey?: string): {
     mcpServer: McpServer;
     transport: WebStandardStreamableHTTPServerTransport;
   } {
@@ -74,7 +85,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
     const client = injectedClient ?? createDefaultClient(resolvedConvexUrl!, convexToken);
 
-    registerTools(mcpServer, client, preparedTools);
+    registerTools(mcpServer, client, preparedTools, hooks, apiKey);
     registerResources(mcpServer, client, preparedResources);
 
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -88,39 +99,46 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
     handler() {
       return {
         async GET(request: Request): Promise<Response> {
+          const requestId = randomUUID();
           const authResult = await validateRequest(request, config.auth);
-          if (!authResult.valid) return authResult.response;
+          if (!authResult.valid) return addRequestId(authResult.response, requestId);
 
-          const { mcpServer, transport } = createServerAndTransport(authResult.convexToken);
+          const { mcpServer, transport } = createServerAndTransport(authResult.convexToken, authResult.apiKey);
           await mcpServer.connect(transport);
-          return transport.handleRequest(request);
+          const response = await transport.handleRequest(request);
+          return addRequestId(response, requestId);
         },
         async POST(request: Request): Promise<Response> {
+          const requestId = randomUUID();
           const authResult = await validateRequest(request, config.auth);
-          if (!authResult.valid) return authResult.response;
+          if (!authResult.valid) return addRequestId(authResult.response, requestId);
 
           const contentType = request.headers.get("content-type");
           if (!contentType?.includes("application/json")) {
-            return new Response(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                error: { code: -32700, message: "Unsupported Media Type: expected application/json" },
-                id: null,
-              }),
-              { status: 415, headers: { "Content-Type": "application/json" } },
+            return addRequestId(
+              new Response(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  error: { code: -32700, message: "Unsupported Media Type: expected application/json" },
+                  id: null,
+                }),
+                { status: 415, headers: { "Content-Type": "application/json" } },
+              ),
+              requestId,
             );
           }
 
-          const { mcpServer, transport } = createServerAndTransport(authResult.convexToken);
+          const { mcpServer, transport } = createServerAndTransport(authResult.convexToken, authResult.apiKey);
           await mcpServer.connect(transport);
-          return transport.handleRequest(request);
+          const response = await transport.handleRequest(request);
+          return addRequestId(response, requestId);
         },
       };
     },
   };
 }
 
-function prepareTtools(tools: Record<string, ToolDef>): PreparedTool[] {
+function prepareTools(tools: Record<string, ToolDef>): PreparedTool[] {
   return Object.entries(tools).map(([name, toolDef]) => {
     const zodSchema = toolDef.args ? convexArgsToZod(toolDef.args) : undefined;
     return {
@@ -141,10 +159,50 @@ function prepareResources(resources: Record<string, ResourceDef>): PreparedResou
   }));
 }
 
+async function invokeHook(
+  hooks: LifecycleHooks | undefined,
+  ctx: CallContext,
+  toolDef: ToolDef,
+): Promise<OnCallResult | void> {
+  const handler = ctx.phase === "error" && toolDef.onError
+    ? toolDef.onError
+    : hooks?.onToolCall;
+
+  if (!handler) return;
+
+  try {
+    return await handler(ctx as CallContext & { phase: "error" });
+  } catch (hookError) {
+    console.error("[convex-mcp] hook error (swallowed)", {
+      requestId: ctx.requestId,
+      phase: ctx.phase,
+      tool: ctx.toolName,
+      error: hookError,
+    });
+    return;
+  }
+}
+
+function executeWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number | undefined,
+): Promise<T> {
+  if (!timeoutMs) return promise;
+
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Tool execution timed out")), timeoutMs),
+    ),
+  ]);
+}
+
 function registerTools(
   mcpServer: McpServer,
   client: ConvexClient,
   tools: PreparedTool[],
+  hooks: LifecycleHooks | undefined,
+  apiKey: string | undefined,
 ): void {
   for (const { name, description, zodShape, toolDef } of tools) {
     mcpServer.tool(
@@ -152,28 +210,84 @@ function registerTools(
       description,
       zodShape,
       async (args) => {
+        const requestId = randomUUID();
+        const startedAt = Date.now();
+        const safeDef: Omit<ToolDef, "ref" | "onError"> = {
+          type: toolDef.type,
+          args: toolDef.args,
+          description: toolDef.description,
+          tags: toolDef.tags,
+          timeout: toolDef.timeout,
+        };
+
+        const baseCtx = {
+          requestId,
+          toolName: name,
+          toolDef: safeDef,
+          args: args as Record<string, unknown>,
+          apiKey: apiKey ?? "",
+          startedAt,
+        };
+
+        const beforeCtx: CallContext = { ...baseCtx, phase: "before" as const };
+        const beforeResult = await invokeHook(hooks, beforeCtx, toolDef);
+        if (beforeResult?.abort) {
+          return {
+            content: [{ type: "text" as const, text: beforeResult.errorMessage ?? "Tool call rejected" }],
+            isError: true,
+          };
+        }
+
         try {
           let result: unknown;
-          switch (toolDef.type) {
-            case "query":
-              result = await client.query(toolDef.ref, args as Record<string, unknown>);
-              break;
-            case "mutation":
-              result = await client.mutation(toolDef.ref, args as Record<string, unknown>);
-              break;
-            case "action":
-              result = await client.action(toolDef.ref, args as Record<string, unknown>);
-              break;
-            default:
-              throw new Error(`Unknown function type: ${toolDef.type as string}`);
-          }
+          const callPromise = (async () => {
+            switch (toolDef.type) {
+              case "query":
+                return await client.query(toolDef.ref, args as Record<string, unknown>);
+              case "mutation":
+                return await client.mutation(toolDef.ref, args as Record<string, unknown>);
+              case "action":
+                return await client.action(toolDef.ref, args as Record<string, unknown>);
+              default:
+                throw new Error(`Unknown function type: ${toolDef.type as string}`);
+            }
+          })();
+
+          result = await executeWithTimeout(callPromise, toolDef.timeout);
+          const durationMs = Date.now() - startedAt;
+
+          const successCtx: CallContext = {
+            ...baseCtx,
+            phase: "success",
+            result,
+            durationMs,
+          };
+          await invokeHook(hooks, successCtx, toolDef);
+
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result ?? null, null, 2) }],
           };
         } catch (error) {
-          console.error("[convex-mcp] tool execution failed", { tool: name, error });
+          const durationMs = Date.now() - startedAt;
+          const errorCtx: CallContext = {
+            ...baseCtx,
+            phase: "error",
+            error,
+            durationMs,
+          };
+
+          const errorResult = await invokeHook(hooks, errorCtx, toolDef);
+          const errorMessage = errorResult?.message ?? "Function execution failed";
+
+          console.error("[convex-mcp] tool execution failed", {
+            requestId,
+            tool: name,
+            durationMs,
+            error,
+          });
+
           return {
-            content: [{ type: "text" as const, text: "Function execution failed" }],
+            content: [{ type: "text" as const, text: errorMessage }],
             isError: true,
           };
         }
