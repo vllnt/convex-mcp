@@ -1,0 +1,363 @@
+# @vllnt/convex-mcp — Full LLM Context
+
+> Expose Convex functions as MCP (Model Context Protocol) tools via Streamable HTTP.
+> This file contains everything needed to use the package correctly.
+
+## Install
+
+```bash
+pnpm add @vllnt/convex-mcp
+```
+
+Peer dependency: `convex` (>=1.0.0)
+
+---
+
+## Core Concepts
+
+1. You define Convex functions (queries, mutations, actions) in your Convex project.
+2. You create an MCP server config that maps those functions to named tools.
+3. You mount the server on a route handler (Next.js App Router, Cloudflare Workers, etc.).
+4. LLM clients connect via Streamable HTTP and call your Convex functions as MCP tools.
+
+---
+
+## Complete API Reference
+
+### createMCPServer(config) -> ConvexMCPServer
+
+Creates an MCP server. Auth is REQUIRED (default-deny — throws without it).
+
+```typescript
+import { createMCPServer } from "@vllnt/convex-mcp";
+
+const mcp = createMCPServer({
+  // REQUIRED: auth configuration
+  auth: {
+    // REQUIRED: validate API key from Authorization: Bearer <key> header
+    validate: (apiKey: string) => Promise<boolean> | boolean,
+
+    // OPTIONAL: return a Convex auth token (JWT) to set on ConvexHttpClient
+    // This populates ctx.auth in your Convex functions
+    convexToken?: (apiKey: string) => Promise<string | undefined> | string | undefined,
+  },
+
+  // OPTIONAL: named MCP tools. Keys become tool names.
+  tools?: Record<string, ToolDef>,
+
+  // OPTIONAL: named MCP resources. Keys are URI template patterns.
+  resources?: Record<string, ResourceDef>,
+
+  // OPTIONAL: Convex deployment URL
+  // Falls back to CONVEX_URL then NEXT_PUBLIC_CONVEX_URL env var
+  convexUrl?: string,
+
+  // OPTIONAL: MCP server name (default: "convex-mcp")
+  name?: string,
+
+  // OPTIONAL: MCP server version (default: "0.1.0")
+  version?: string,
+});
+```
+
+Throws:
+- If `auth.validate` is not provided.
+- If no Convex URL is found.
+
+### .handler(options?) -> { GET, POST }
+
+Returns request handlers compatible with Next.js App Router route handlers.
+
+```typescript
+const { GET, POST } = mcp.handler();
+// or
+const { GET, POST } = mcp.handler({ allowedOrigins: ["https://example.com"] });
+```
+
+Both GET and POST accept a Request and return Promise<Response>.
+POST validates Content-Type: application/json (returns 415 otherwise).
+
+### query(ref, options?) -> ToolDef
+
+Wraps a Convex query function reference as an MCP tool.
+
+```typescript
+import { query } from "@vllnt/convex-mcp";
+
+query(api.tasks.list, {
+  args: v.object({ status: v.optional(v.string()) }),
+  description: "List tasks by status",
+})
+```
+
+### mutation(ref, options?) -> ToolDef
+
+Wraps a Convex mutation. Same signature as query().
+
+```typescript
+import { mutation } from "@vllnt/convex-mcp";
+
+mutation(api.tasks.create, {
+  args: v.object({ title: v.string() }),
+  description: "Create a task",
+})
+```
+
+### action(ref, options?) -> ToolDef
+
+Wraps a Convex action. Same signature as query().
+
+```typescript
+import { action } from "@vllnt/convex-mcp";
+
+action(api.ai.summarize, {
+  args: v.object({ documentId: v.id("documents") }),
+  description: "Summarize a document",
+})
+```
+
+### resource(ref, options?) -> ResourceDef
+
+Wraps a Convex query as an MCP resource with a URI template.
+
+```typescript
+import { resource } from "@vllnt/convex-mcp";
+
+// Used as a key in the resources record:
+resources: {
+  "space://{id}": resource(api.spaces.get, {
+    args: v.object({ id: v.id("spaces") }),
+    description: "Get a space by ID",
+  }),
+}
+```
+
+### convexArgsToZod(argsValidator) -> z.ZodObject
+
+Converts a Convex v.object() validator to a Zod object schema. Throws if not v.object().
+
+### convertValidator(validator) -> z.ZodTypeAny
+
+Converts any single Convex validator to a Zod schema. Recursive.
+Throws UnsupportedValidatorError for unknown validator kinds.
+
+### UnsupportedValidatorError
+
+```typescript
+import { UnsupportedValidatorError } from "@vllnt/convex-mcp";
+// Error: 'Unsupported Convex validator kind: "futureType". This may be from a newer version of Convex.'
+```
+
+---
+
+## Types
+
+```typescript
+interface ServerConfig {
+  auth: AuthConfig;
+  tools?: Record<string, ToolDef>;
+  resources?: Record<string, ResourceDef>;
+  convexUrl?: string;
+  name?: string;
+  version?: string;
+}
+
+interface AuthConfig {
+  validate: (apiKey: string) => Promise<boolean> | boolean;
+  convexToken?: (apiKey: string) => Promise<string | undefined> | string | undefined;
+}
+
+interface ToolDef {
+  ref: unknown;                    // Convex function reference (e.g. api.tasks.list)
+  type: "query" | "mutation" | "action";
+  args?: ConvexValidator;          // Convex v.object() validator
+  description?: string;
+}
+
+interface ResourceDef {
+  ref: unknown;                    // Convex function reference (must be a query)
+  args?: ConvexValidator;
+  description?: string;
+}
+
+interface HandlerOptions {
+  allowedOrigins?: string[];
+}
+
+interface ConvexMCPServer {
+  handler: (options?: HandlerOptions) => {
+    GET: (request: Request) => Promise<Response>;
+    POST: (request: Request) => Promise<Response>;
+  };
+}
+
+type FunctionType = "query" | "mutation" | "action";
+```
+
+---
+
+## Validator Mapping (Convex -> JSON Schema)
+
+All Convex v.* types with their JSON Schema output:
+
+| Convex | JSON Schema | Notes |
+|--------|-------------|-------|
+| v.string() | { "type": "string" } | |
+| v.number() / v.float64() | { "type": "number" } | v.number() is alias for v.float64() |
+| v.boolean() | { "type": "boolean" } | |
+| v.null() | { "type": "null" } | |
+| v.int64() | { "type": "string", "description": "64-bit integer as string..." } | JSON can't represent BigInt |
+| v.bytes() | { "type": "string", "description": "Binary data as base64-encoded string" } | |
+| v.id("table") | { "type": "string", "description": "Convex document ID for table 'table'" } | |
+| v.literal("x") | { "const": "x" } | String, number, or boolean |
+| v.array(v.X()) | { "type": "array", "items": X } | Recursive |
+| v.object({...}) | { "type": "object", "properties": {...}, "required": [...] } | Recursive |
+| v.union(v.literal("a"), v.literal("b")) | { "enum": ["a", "b"] } | All-literal union -> enum |
+| v.union(v.string(), v.number()) | { "anyOf": [...] } | Mixed union -> anyOf |
+| v.optional(v.X()) | Removes field from "required" array | |
+| v.record(k, v) | { "type": "object", "additionalProperties": V } | |
+| v.any() | {} | Empty schema, accepts anything |
+
+Unknown validator kinds throw UnsupportedValidatorError.
+
+---
+
+## Auth Flow
+
+```
+Request arrives with Authorization: Bearer <key>
+  -> Extract API key from header
+  -> Call auth.validate(apiKey)
+     -> false: return 401 { "error": "Invalid API key." }
+     -> true: continue
+  -> If auth.convexToken defined: call auth.convexToken(apiKey)
+     -> If returns token: ConvexHttpClient.setAuth(token)
+  -> Process MCP request
+```
+
+Missing Authorization header -> 401 { "error": "Missing API key. Provide an Authorization header." }
+
+---
+
+## Error Handling
+
+All Convex function errors are caught and replaced with a generic message:
+
+Tool call errors:
+```json
+{ "content": [{ "type": "text", "text": "Function execution failed" }], "isError": true }
+```
+
+Resource read errors:
+```json
+{ "text": "{\"error\":\"Resource read failed\"}", "mimeType": "application/json" }
+```
+
+Original error messages are NEVER forwarded to the MCP client (may contain PII).
+
+To surface specific errors, return them as part of your function's success response:
+```typescript
+// In your Convex function:
+if (invalid) return { success: false, error: "Title required" };
+return { success: true, id };
+```
+
+---
+
+## Complete Example
+
+```typescript
+// convex/mcp.ts
+import { createMCPServer, query, mutation, action, resource } from "@vllnt/convex-mcp";
+import { api } from "./_generated/api";
+import { v } from "convex/values";
+
+export const mcp = createMCPServer({
+  auth: {
+    validate: async (key) => key === process.env.MCP_API_KEY,
+    convexToken: async (apiKey) => {
+      // Optional: exchange API key for Convex JWT
+      return undefined;
+    },
+  },
+  tools: {
+    // Query tool (read-only, cached)
+    list_tasks: query(api.tasks.list, {
+      args: v.object({
+        status: v.optional(v.union(
+          v.literal("todo"),
+          v.literal("in_progress"),
+          v.literal("done"),
+        )),
+      }),
+      description: "List tasks, optionally filtered by status",
+    }),
+
+    // Mutation tool (write, transactional)
+    create_task: mutation(api.tasks.create, {
+      args: v.object({
+        title: v.string(),
+        description: v.optional(v.string()),
+        tags: v.optional(v.array(v.string())),
+      }),
+      description: "Create a new task",
+    }),
+
+    // Action tool (side effects, external APIs)
+    summarize: action(api.ai.summarize, {
+      args: v.object({
+        documentId: v.id("documents"),
+      }),
+      description: "Generate an AI summary of a document",
+    }),
+  },
+  resources: {
+    "task://{id}": resource(api.tasks.get, {
+      args: v.object({ id: v.id("tasks") }),
+      description: "Get a task by ID",
+    }),
+  },
+});
+```
+
+```typescript
+// app/api/mcp/route.ts
+import { mcp } from "@/convex/mcp";
+export const { GET, POST } = mcp.handler();
+```
+
+Environment variables:
+```
+CONVEX_URL=https://your-deployment.convex.cloud
+MCP_API_KEY=your-secret-key
+```
+
+---
+
+## Deployment Notes
+
+- Works with any platform supporting Web Fetch API (Request -> Response)
+- Next.js App Router: export { GET, POST } from handler()
+- Vercel Hobby: 10s timeout (fine for queries/mutations)
+- Vercel Pro: 60s timeout
+- Vercel Pro + Fluid Compute: 800s timeout (for long-running actions)
+- Set maxDuration in route file: `export const maxDuration = 60;`
+
+---
+
+## Security Summary
+
+- Default-deny: auth.validate is REQUIRED, server throws without it
+- Generic errors: Convex errors never leak to MCP client
+- No function-level authz in v1: valid API key = access to all exposed tools
+- Service account model: by default ctx.auth is null; use convexToken hook for identity
+- Scope tools carefully: only expose functions the key holder should access
+
+---
+
+## Known Limitations
+
+1. Validator duplication: must provide v.object() validators alongside function refs (FunctionReference has no runtime schema)
+2. No per-tool authorization: a valid key accesses all tools (create separate servers for different access levels)
+3. Service account model: no per-user identity by default (use convexToken for identity propagation)
+4. No built-in rate limiting: use platform-level rate limiting

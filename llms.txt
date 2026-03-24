@@ -1,0 +1,55 @@
+# @vllnt/convex-mcp
+
+> Expose Convex functions as MCP tools via Streamable HTTP
+
+## Overview
+
+`@vllnt/convex-mcp` turns Convex queries, mutations, and actions into MCP (Model Context Protocol) tools that any LLM client can call. Convex validators are automatically converted to JSON Schema for tool definitions. Auth is mandatory (default-deny).
+
+## Quick Start
+
+```typescript
+// convex/mcp.ts
+import { createMCPServer, query, mutation } from "@vllnt/convex-mcp";
+import { api } from "./_generated/api";
+import { v } from "convex/values";
+
+export const mcp = createMCPServer({
+  auth: { validate: async (key) => key === process.env.MCP_API_KEY },
+  tools: {
+    list_tasks: query(api.tasks.list, {
+      args: v.object({}),
+      description: "List all tasks",
+    }),
+    create_task: mutation(api.tasks.create, {
+      args: v.object({ title: v.string() }),
+      description: "Create a task",
+    }),
+  },
+});
+
+// app/api/mcp/route.ts
+import { mcp } from "@/convex/mcp";
+export const { GET, POST } = mcp.handler();
+```
+
+## API
+
+- `createMCPServer(config)` — Create an MCP server with auth, tools, and resources
+- `query(ref, opts?)` — Wrap a Convex query as an MCP tool
+- `mutation(ref, opts?)` — Wrap a Convex mutation as an MCP tool
+- `action(ref, opts?)` — Wrap a Convex action as an MCP tool
+- `resource(ref, opts?)` — Wrap a Convex query as an MCP resource with URI template
+- `convexArgsToZod(validator)` — Convert Convex v.object() validator to Zod schema
+- `convertValidator(validator)` — Convert any Convex validator to Zod schema
+- `UnsupportedValidatorError` — Error thrown for unrecognized validator kinds
+
+## Docs
+
+- [Getting Started](docs/getting-started.md)
+- [API Reference](docs/api-reference.md)
+- [Validator Mapping](docs/validators.md)
+- [Deployment](docs/deployment.md)
+- [Security](docs/security.md)
+- [Examples](docs/examples.md)
+- [Full LLM Context](llms-full.txt)
