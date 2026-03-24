@@ -1,5 +1,5 @@
-import { query, mutation, action } from "./_generated/server";
 import { v } from "convex/values";
+import { action, mutation, query } from "./_generated/server";
 
 export const list = query({
   args: { status: v.optional(v.union(v.literal("todo"), v.literal("done"))) },

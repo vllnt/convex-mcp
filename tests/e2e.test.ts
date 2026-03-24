@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { convexTest } from "convex-test";
-import schema from "./convex/schema.js";
-import { api } from "./convex/_generated/api.js";
-import { createMCPServer } from "../src/server.js";
-import { query, mutation, action } from "../src/tool.js";
 import { v } from "convex/values";
+import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
+import { createMCPServer } from "../src/server.js";
+import { action, mutation, query } from "../src/tool.js";
 import type { ConvexClient } from "../src/types.js";
+import { api } from "./convex/_generated/api.js";
+import schema from "./convex/schema.js";
 
 const modules = import.meta.glob("./convex/**/*.ts");
 

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createMCPServer } from "../src/server.js";
-import { query, mutation, action } from "../src/tool.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resource } from "../src/resource.js";
+import { createMCPServer } from "../src/server.js";
+import { action, mutation, query } from "../src/tool.js";
 
 const MOCK_CONVEX_URL = "https://test-deployment.convex.cloud";
 

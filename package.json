@@ -30,6 +30,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "biome check src/ tests/",
     "typecheck": "tsc --noEmit && tsc --noEmit --project tsconfig.check.json",
     "prepublishOnly": "pnpm run build"
   },
@@ -41,7 +42,10 @@
     "llm",
     "tools"
   ],
-  "author": "vllnt",
+  "author": {
+    "name": "vllnt",
+    "url": "https://bntvllnt.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -62,6 +66,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
     "@types/node": "^25.5.0",
     "@vitest/coverage-v8": "^3.2.4",
     "convex": "^1.21.0",

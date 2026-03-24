@@ -1,4 +1,4 @@
-import type { ResourceDef, ConvexValidator } from "./types.js";
+import type { ConvexValidator, ResourceDef } from "./types.js";
 
 interface ResourceOptions {
   args?: ConvexValidator;
