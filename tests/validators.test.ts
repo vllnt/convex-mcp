@@ -199,6 +199,13 @@ describe("convertValidator", () => {
     expect(() => convertValidator(makeValidator("record", { key: makeValidator("string") }))).toThrow(UnsupportedValidatorError);
   });
 
+  it("throws on record with non-string key", () => {
+    expect(() => convertValidator(makeValidator("record", {
+      key: makeValidator("float64"),
+      value: makeValidator("string"),
+    }))).toThrow('record key must be string or id, got "float64"');
+  });
+
   it("handles object with no fields (returns empty object schema)", () => {
     const schema = convertValidator(makeValidator("object"));
     expect(schema.parse({})).toEqual({});
