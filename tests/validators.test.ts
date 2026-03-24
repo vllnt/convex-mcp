@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { convexArgsToZod, convertValidator, UnsupportedValidatorError } from "../src/validators.js";
+import { describe, expect, it } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { convertValidator, convexArgsToZod, UnsupportedValidatorError } from "../src/validators.js";
 
 function makeValidator(kind: string, extra: Record<string, unknown> = {}): any {
   return { kind, isOptional: "required", ...extra };

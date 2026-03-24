@@ -170,6 +170,10 @@ Convex validators are automatically converted to JSON Schema for MCP tool defini
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Author
+
+**vllnt** — [bntvllnt.com](https://bntvllnt.com) | [X](https://bntvllnt.com/x) | [Discord](https://bntvllnt.com/discord) | [GitHub](https://bntvllnt.com/github)
+
 ## License
 
 [MIT](LICENSE)

@@ -1,11 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ConvexHttpClient } from "convex/browser";
-import { randomUUID } from "node:crypto";
-import { convexArgsToZod } from "./validators.js";
-import { validateRequest } from "./auth.js";
-import type { ServerConfig, ConvexMCPServer, ConvexClient, ToolDef, ResourceDef, LifecycleHooks, CallContext, OnCallResult } from "./types.js";
 import type { z } from "zod";
+import { validateRequest } from "./auth.js";
+import type { CallContext, ConvexClient, ConvexMCPServer, LifecycleHooks, OnCallResult, ResourceDef, ServerConfig, ToolDef } from "./types.js";
+import { convexArgsToZod } from "./validators.js";
 
 function createDefaultClient(convexUrl: string, convexToken?: string): ConvexClient {
   const client = new ConvexHttpClient(convexUrl);

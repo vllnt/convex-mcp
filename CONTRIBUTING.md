@@ -32,3 +32,7 @@ pnpm lint         # Linting
 - No `any` types (use `unknown` + type guards)
 - Explicit return types on exported functions
 - Tests for all public API changes
+
+## Questions?
+
+Open a [GitHub discussion](https://github.com/vllnt/convex-mcp/discussions), join the [Discord](https://bntvllnt.com/discord), or reach out on [X](https://bntvllnt.com/x).
