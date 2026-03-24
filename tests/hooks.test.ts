@@ -111,6 +111,27 @@ describe("lifecycle hooks", () => {
     expect(mockClient.query).not.toHaveBeenCalled();
   });
 
+  it("onToolCall abort uses default message when errorMessage not provided", async () => {
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      hooks: {
+        onToolCall: async (ctx) => {
+          if (ctx.phase === "before") return { abort: true };
+        },
+      },
+      tools: {
+        list: query(null, { args: makeValidator("object", { fields: {} }), description: "List" }),
+      },
+    });
+
+    const data = await parseSSEResponse(
+      await server.handler().POST(mcpRequest("tools/call", { name: "list", arguments: {} })),
+    );
+    expect(data.result.isError).toBe(true);
+    expect(data.result.content[0].text).toBe("Tool call rejected");
+  });
+
   it("onToolCall error phase with custom message (AC-3)", async () => {
     const mockClient = await getMockClient();
     mockClient.query.mockRejectedValueOnce(new Error("DB down"));

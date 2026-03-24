@@ -352,6 +352,54 @@ describe("edge cases", () => {
     expect(data.result.content[0].text).toBe("Function execution failed");
   });
 
+  it("handles tool with no description (falls back to empty string)", async () => {
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        no_desc: query(null, { args: makeValidator("object", { fields: {} }) }),
+      },
+    });
+
+    const handler = server.handler();
+    const response = await handler.POST(mcpRequest("tools/list"));
+    expect(response.status).toBe(200);
+
+    const data = await parseSSEResponse(response);
+    const tool = data.result.tools.find((t: any) => t.name === "no_desc");
+    expect(tool.description).toBe("");
+  });
+
+  it("handles tool returning undefined result (coerced to null)", async () => {
+    const mockClient = await getMockClient();
+    mockClient.query.mockResolvedValueOnce(undefined);
+
+    const server = createTestServer();
+    const handler = server.handler();
+
+    const response = await handler.POST(mcpRequest("tools/call", {
+      name: "list_projects",
+      arguments: {},
+    }));
+    expect(response.status).toBe(200);
+
+    const data = await parseSSEResponse(response);
+    expect(data.result.content[0].text).toBe("null");
+  });
+
+  it("handles resource returning undefined result (coerced to null)", async () => {
+    const mockClient = await getMockClient();
+    mockClient.query.mockResolvedValueOnce(undefined);
+
+    const server = createTestServer();
+    const handler = server.handler();
+
+    const response = await handler.POST(mcpRequest("resources/read", {
+      uri: "space://space1",
+    }));
+    expect(response.status).toBe(200);
+  });
+
   it("rejects non-Bearer auth scheme", async () => {
     const server = createTestServer();
     const handler = server.handler();
