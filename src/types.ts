@@ -47,7 +47,7 @@ export interface CallContext {
   toolName: string;
   toolDef: Omit<ToolDef, "ref" | "onError">;
   args: Record<string, unknown>;
-  apiKey: string;
+  apiKey: string | undefined;
   phase: "before" | "success" | "error";
   result?: unknown;
   error?: unknown;
@@ -56,8 +56,11 @@ export interface CallContext {
 }
 
 export interface OnCallResult {
+  /** Set true to abort execution. Only checked during "before" phase. */
   abort?: boolean;
+  /** Custom error message when aborting (before phase). Default: "Tool call rejected" */
   errorMessage?: string;
+  /** Custom error message on failure (error phase). Default: "Function execution failed" */
   message?: string;
 }
 

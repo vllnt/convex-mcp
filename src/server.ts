@@ -74,7 +74,11 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   const preparedTools = prepareTools(config.tools ?? {});
   const preparedResources = prepareResources(config.resources ?? {});
 
-  function createServerAndTransport(convexToken?: string, apiKey?: string): {
+  function createServerAndTransport(
+    requestId: string,
+    convexToken?: string,
+    apiKey?: string,
+  ): {
     mcpServer: McpServer;
     transport: WebStandardStreamableHTTPServerTransport;
   } {
@@ -85,7 +89,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
     const client = injectedClient ?? createDefaultClient(resolvedConvexUrl!, convexToken);
 
-    registerTools(mcpServer, client, preparedTools, hooks, apiKey);
+    registerTools(mcpServer, client, preparedTools, hooks, requestId, apiKey);
     registerResources(mcpServer, client, preparedResources);
 
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -103,7 +107,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
           const authResult = await validateRequest(request, config.auth);
           if (!authResult.valid) return addRequestId(authResult.response, requestId);
 
-          const { mcpServer, transport } = createServerAndTransport(authResult.convexToken, authResult.apiKey);
+          const { mcpServer, transport } = createServerAndTransport(requestId, authResult.convexToken, authResult.apiKey);
           await mcpServer.connect(transport);
           const response = await transport.handleRequest(request);
           return addRequestId(response, requestId);
@@ -128,7 +132,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
             );
           }
 
-          const { mcpServer, transport } = createServerAndTransport(authResult.convexToken, authResult.apiKey);
+          const { mcpServer, transport } = createServerAndTransport(requestId, authResult.convexToken, authResult.apiKey);
           await mcpServer.connect(transport);
           const response = await transport.handleRequest(request);
           return addRequestId(response, requestId);
@@ -171,7 +175,7 @@ async function invokeHook(
   if (!handler) return;
 
   try {
-    return await handler(ctx as CallContext & { phase: "error" });
+    return await (handler as (ctx: CallContext) => Promise<OnCallResult | void>)(ctx);
   } catch (hookError) {
     console.error("[convex-mcp] hook error (swallowed)", {
       requestId: ctx.requestId,
@@ -189,11 +193,12 @@ function executeWithTimeout<T>(
 ): Promise<T> {
   if (!timeoutMs) return promise;
 
+  let handle: ReturnType<typeof setTimeout>;
   return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Tool execution timed out")), timeoutMs),
-    ),
+    promise.finally(() => clearTimeout(handle)),
+    new Promise<never>((_, reject) => {
+      handle = setTimeout(() => reject(new Error("Tool execution timed out")), timeoutMs);
+    }),
   ]);
 }
 
@@ -202,6 +207,7 @@ function registerTools(
   client: ConvexClient,
   tools: PreparedTool[],
   hooks: LifecycleHooks | undefined,
+  requestId: string,
   apiKey: string | undefined,
 ): void {
   for (const { name, description, zodShape, toolDef } of tools) {
@@ -210,22 +216,15 @@ function registerTools(
       description,
       zodShape,
       async (args) => {
-        const requestId = randomUUID();
         const startedAt = Date.now();
-        const safeDef: Omit<ToolDef, "ref" | "onError"> = {
-          type: toolDef.type,
-          args: toolDef.args,
-          description: toolDef.description,
-          tags: toolDef.tags,
-          timeout: toolDef.timeout,
-        };
+        const { ref: _ref, onError: _onError, ...safeDef } = toolDef;
 
         const baseCtx = {
           requestId,
           toolName: name,
           toolDef: safeDef,
           args: args as Record<string, unknown>,
-          apiKey: apiKey ?? "",
+          apiKey,
           startedAt,
         };
 
@@ -239,7 +238,6 @@ function registerTools(
         }
 
         try {
-          let result: unknown;
           const callPromise = (async () => {
             switch (toolDef.type) {
               case "query":
@@ -253,7 +251,7 @@ function registerTools(
             }
           })();
 
-          result = await executeWithTimeout(callPromise, toolDef.timeout);
+          const result = await executeWithTimeout(callPromise, toolDef.timeout);
           const durationMs = Date.now() - startedAt;
 
           const successCtx: CallContext = {
