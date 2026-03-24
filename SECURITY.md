@@ -6,9 +6,9 @@ If you discover a security vulnerability in `@vllnt/convex-mcp`, please report i
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, email: **security@bntvllnt.com**
+Instead, reach out via DM on any social platform linked at [bntvllnt.com](https://bntvllnt.com), or open a [GitHub security advisory](https://github.com/vllnt/convex-mcp/security/advisories/new).
 
-You will receive a response within 48 hours. We will work with you to understand the issue and coordinate a fix before any public disclosure.
+We will respond promptly and coordinate a fix before any public disclosure.
 
 ## Supported Versions
 

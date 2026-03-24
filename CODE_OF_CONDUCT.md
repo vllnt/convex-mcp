@@ -21,7 +21,7 @@ Examples of unacceptable behavior:
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to **conduct@bntvllnt.com**. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported via DM on any social platform linked at [bntvllnt.com](https://bntvllnt.com). All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
 
