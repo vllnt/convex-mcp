@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ConvexHttpClient } from "convex/browser";
@@ -103,7 +102,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
     handler() {
       return {
         async GET(request: Request): Promise<Response> {
-          const requestId = randomUUID();
+          const requestId = crypto.randomUUID();
           const authResult = await validateRequest(request, config.auth);
           if (!authResult.valid) return addRequestId(authResult.response, requestId);
 
@@ -113,7 +112,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
           return addRequestId(response, requestId);
         },
         async POST(request: Request): Promise<Response> {
-          const requestId = randomUUID();
+          const requestId = crypto.randomUUID();
           const authResult = await validateRequest(request, config.auth);
           if (!authResult.valid) return addRequestId(authResult.response, requestId);
 
