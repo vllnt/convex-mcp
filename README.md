@@ -79,7 +79,8 @@ createMCPServer({
   resources?: Record<string, ResourceDef>;
   convexUrl?: string;      // defaults to CONVEX_URL or NEXT_PUBLIC_CONVEX_URL
   name?: string;           // MCP server name (default: "convex-mcp")
-  version?: string;        // MCP server version (default: "0.1.0")
+  version?: string;        // MCP server version (default: "0.2.0")
+  pagination?: PaginationConfig;  // opt-in pagination + two-phase discovery
 })
 ```
 
@@ -122,6 +123,31 @@ Auth is **required**. The server throws at startup without it (default-deny).
 ### `.handler(options?)`
 
 Returns `{ GET, POST }` functions compatible with Next.js App Router route handlers.
+
+### Pagination + Two-Phase Discovery
+
+Opt-in pagination for `tools/list` and two-phase tool discovery for reduced token overhead.
+
+```typescript
+createMCPServer({
+  auth: { validate: async (key) => key === process.env.MCP_API_KEY },
+  tools: { /* ... */ },
+  pagination: {
+    pageSize: 20,              // tools per page (must be integer >= 1)
+    twoPhaseDiscovery: true,   // enable tools/list_summary + tools/describe
+  },
+});
+```
+
+**Cursor-based pagination** (MCP spec-compliant):
+- `tools/list` without cursor returns ALL tools (backwards-compatible)
+- `tools/list` with `cursor: ""` starts pagination, returns `nextCursor`
+- Cursors are HMAC-signed with constant-time verification
+
+**Two-phase discovery** (non-standard, for custom agents):
+- `tools/list_summary` returns `{ name, description }` only (no `inputSchema`)
+- `tools/describe` with `{ name }` returns the full tool definition on-demand
+- Reduces token overhead ~90% for large tool catalogs
 
 ## Validator Mapping
 

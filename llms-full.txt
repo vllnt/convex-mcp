@@ -55,14 +55,18 @@ const mcp = createMCPServer({
   // OPTIONAL: MCP server name (default: "convex-mcp")
   name?: string,
 
-  // OPTIONAL: MCP server version (default: "0.1.0")
+  // OPTIONAL: MCP server version (default: "0.2.0")
   version?: string,
+
+  // OPTIONAL: pagination and two-phase discovery
+  pagination?: PaginationConfig,
 });
 ```
 
 Throws:
 - If `auth.validate` is not provided.
 - If no Convex URL is found.
+- If `pagination.pageSize` is not a positive integer >= 1.
 
 ### .handler(options?) -> { GET, POST }
 
@@ -70,8 +74,6 @@ Returns request handlers compatible with Next.js App Router route handlers.
 
 ```typescript
 const { GET, POST } = mcp.handler();
-// or
-const { GET, POST } = mcp.handler({ allowedOrigins: ["https://example.com"] });
 ```
 
 Both GET and POST accept a Request and return Promise<Response>.
@@ -150,6 +152,73 @@ import { UnsupportedValidatorError } from "@vllnt/convex-mcp";
 
 ---
 
+## Pagination + Two-Phase Discovery
+
+Opt-in features for servers with many tools. Reduces token overhead and supports cursor-based pagination.
+
+### PaginationConfig
+
+```typescript
+interface PaginationConfig {
+  pageSize: number;              // Tools per page (positive integer >= 1)
+  twoPhaseDiscovery?: boolean;   // Enable tools/list_summary + tools/describe (default: false)
+}
+```
+
+### Cursor-Based Pagination (MCP Spec-Compliant)
+
+When `pagination` is set in config:
+
+- `tools/list` WITHOUT cursor: returns ALL tools (backwards-compatible, no behavior change)
+- `tools/list` WITH `cursor: ""`: starts pagination, returns first `pageSize` tools + `nextCursor`
+- `tools/list` WITH `cursor: "<nextCursor>"`: returns next page + `nextCursor` (or absent on last page)
+- Invalid/tampered cursors return JSON-RPC error -32602
+
+Cursors are HMAC-signed with a per-instance secret (constant-time verification). They expire naturally on server restart.
+
+### Two-Phase Discovery (Non-Standard)
+
+When `twoPhaseDiscovery: true`:
+
+- `tools/list_summary`: returns `{ tools: [{ name, description }] }` — no `inputSchema`, ~90% token reduction
+- `tools/describe` with `{ name: "toolName" }`: returns full tool definition including `inputSchema`
+- Unknown tool name returns JSON-RPC error -32602
+
+These are non-standard MCP methods (community proposal #1923). Only custom agents that explicitly call these methods will benefit. Standard MCP clients (Claude Desktop, Cursor, etc.) will not use them.
+
+### Example with Pagination
+
+```typescript
+const mcp = createMCPServer({
+  auth: { validate: async (key) => key === process.env.MCP_API_KEY },
+  tools: {
+    // 50+ tools...
+  },
+  pagination: {
+    pageSize: 20,
+    twoPhaseDiscovery: true,
+  },
+});
+```
+
+### Exported Types
+
+```typescript
+import type { PaginationConfig, ToolSummary, ToolPage } from "@vllnt/convex-mcp";
+
+interface ToolSummary {
+  name: string;
+  description: string;
+}
+
+interface ToolPage<T extends object> {
+  tools: T[];
+  nextCursor?: string;
+}
+```
+
+---
+
 ## Types
 
 ```typescript
@@ -160,6 +229,12 @@ interface ServerConfig {
   convexUrl?: string;
   name?: string;
   version?: string;
+  pagination?: PaginationConfig;
+}
+
+interface PaginationConfig {
+  pageSize: number;
+  twoPhaseDiscovery?: boolean;
 }
 
 interface AuthConfig {
@@ -180,12 +255,8 @@ interface ResourceDef {
   description?: string;
 }
 
-interface HandlerOptions {
-  allowedOrigins?: string[];
-}
-
 interface ConvexMCPServer {
-  handler: (options?: HandlerOptions) => {
+  handler: () => {
     GET: (request: Request) => Promise<Response>;
     POST: (request: Request) => Promise<Response>;
   };
@@ -317,6 +388,11 @@ export const mcp = createMCPServer({
       description: "Get a task by ID",
     }),
   },
+  // Optional: pagination for large tool catalogs
+  pagination: {
+    pageSize: 20,
+    twoPhaseDiscovery: true,
+  },
 });
 ```
 
@@ -349,6 +425,7 @@ MCP_API_KEY=your-secret-key
 
 - Default-deny: auth.validate is REQUIRED, server throws without it
 - Generic errors: Convex errors never leak to MCP client
+- HMAC-signed cursors: pagination cursors are signed with per-instance secret, constant-time verified
 - No function-level authz in v1: valid API key = access to all exposed tools
 - Service account model: by default ctx.auth is null; use convexToken hook for identity
 - Scope tools carefully: only expose functions the key holder should access
@@ -361,3 +438,4 @@ MCP_API_KEY=your-secret-key
 2. No per-tool authorization: a valid key accesses all tools (create separate servers for different access levels)
 3. Service account model: no per-user identity by default (use convexToken for identity propagation)
 4. No built-in rate limiting: use platform-level rate limiting
+5. Two-phase discovery is non-standard: only custom agents benefit (not Claude Desktop, Cursor, etc.)
