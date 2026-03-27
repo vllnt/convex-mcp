@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { createMCPServer } from "../src/server.js";
-import { action, mutation, query } from "../src/tool.js";
+import { action, mutation, query } from "../src/tools/helpers.js";
 import type { ConvexClient } from "../src/types.js";
 import { api } from "./convex/_generated/api.js";
 import schema from "./convex/schema.js";

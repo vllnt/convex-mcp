@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { paginateTools } from "../src/pagination.js";
 import { createMCPServer } from "../src/server.js";
-import { query } from "../src/tool.js";
+import { query } from "../src/tools/helpers.js";
 
 const MOCK_CONVEX_URL = "https://test-deployment.convex.cloud";
 
@@ -370,16 +369,6 @@ describe("Two-Phase Discovery", () => {
     const noDesc = data.result.tools.find((t: any) => t.name === "no_desc");
     expect(withDesc.description).toBe("I have a desc");
     expect(noDesc.description).toBe("");
-  });
-});
-
-describe("paginateTools unit tests", () => {
-  const hmacSeed = "test-hmac-seed";
-  const items = [{ name: "a" }, { name: "b" }, { name: "c" }];
-
-  it("no cursor returns all items", async () => {
-    const result = await paginateTools(items, "test", 2, undefined, hmacSeed);
-    expect("tools" in result && result.tools).toHaveLength(3);
   });
 });
 

@@ -8,7 +8,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/index.ts", "src/types.ts"],
+      exclude: ["src/index.ts", "src/types.ts", "src/*/types.ts"],
       thresholds: {
         statements: 100,
         // branches: 98% due to v8 counting branches inside `v8 ignore` regions
