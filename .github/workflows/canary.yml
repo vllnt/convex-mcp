@@ -1,0 +1,58 @@
+name: Canary Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Set canary version
+        run: |
+          BASE_VERSION=$(node -e "console.log(require('./package.json').version)")
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          CANARY_VERSION="${BASE_VERSION}-canary.${SHORT_SHA}"
+          echo "CANARY_VERSION=${CANARY_VERSION}" >> "$GITHUB_ENV"
+          npm version "$CANARY_VERSION" --no-git-tag-version
+
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Publish canary
+        run: |
+          sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          unset NODE_AUTH_TOKEN
+          npm publish --provenance --access public --tag canary --ignore-scripts
