@@ -13,7 +13,8 @@ const mcp = createMCPServer({
   resources?: Record<string, ResourceDef>;
   convexUrl?: string;      // defaults to CONVEX_URL or NEXT_PUBLIC_CONVEX_URL env var
   name?: string;           // MCP server name (default: "convex-mcp")
-  version?: string;        // MCP server version (default: "0.1.0")
+  version?: string;        // MCP server version (default: "0.2.0")
+  pagination?: PaginationConfig;  // opt-in pagination + two-phase discovery
 });
 ```
 
@@ -26,11 +27,13 @@ const mcp = createMCPServer({
 | `resources` | `Record<string, ResourceDef>` | No | `{}` | Named MCP resources. Keys are URI template patterns. |
 | `convexUrl` | `string` | No | env var | Convex deployment URL. Falls back to `CONVEX_URL` then `NEXT_PUBLIC_CONVEX_URL`. |
 | `name` | `string` | No | `"convex-mcp"` | Server name reported in MCP `initialize` response. |
-| `version` | `string` | No | `"0.1.0"` | Server version reported in MCP `initialize` response. |
+| `version` | `string` | No | `"0.2.0"` | Server version reported in MCP `initialize` response. |
+| `pagination` | `PaginationConfig` | No | — | Opt-in pagination and two-phase discovery. See [Pagination](#pagination). |
 
 ### Throws
 
 - `Error` if `auth.validate` is not provided (default-deny enforcement).
+- `Error` if `pagination.pageSize` is not a positive integer >= 1.
 - `Error` if no Convex URL is found (config or environment).
 
 ---
@@ -131,6 +134,44 @@ createMCPServer({
 ### Returns
 
 `ResourceDef` — pass this as a value in the `resources` record.
+
+---
+
+## Pagination
+
+Opt-in cursor-based pagination for `tools/list` and two-phase tool discovery.
+
+### `PaginationConfig`
+
+```typescript
+interface PaginationConfig {
+  pageSize: number;              // Tools per page (positive integer >= 1)
+  twoPhaseDiscovery?: boolean;   // Enable tools/list_summary + tools/describe (default: false)
+}
+```
+
+### Cursor-Based Pagination (MCP Spec-Compliant)
+
+- `tools/list` WITHOUT cursor: returns ALL tools (backwards-compatible)
+- `tools/list` WITH `cursor: ""`: starts pagination, returns first `pageSize` tools + `nextCursor`
+- `tools/list` WITH valid cursor: returns next page + `nextCursor` (absent on last page)
+- Invalid/tampered cursors return JSON-RPC error -32602
+
+Cursors are HMAC-signed with a per-instance secret and verified with `crypto.subtle.verify()` (constant-time).
+
+### Two-Phase Discovery (Non-Standard)
+
+These are custom MCP methods — only custom agents that explicitly call them will benefit. Standard MCP clients (Claude Desktop, Cursor) do not use them.
+
+- `tools/list_summary`: returns `{ tools: [{ name, description }] }` — no `inputSchema`, ~90% token reduction
+- `tools/describe` with `{ name: "toolName" }`: returns full tool definition including `inputSchema`
+- Unknown tool name returns JSON-RPC error -32602
+
+### Exported Types
+
+```typescript
+import type { PaginationConfig, ToolSummary, ToolPage } from "@vllnt/convex-mcp";
+```
 
 ---
 
