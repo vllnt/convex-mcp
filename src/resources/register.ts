@@ -3,7 +3,7 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ConvexClient } from "../types.js";
 import type { ResourceDef } from "./types.js";
 
-export interface PreparedResource {
+interface PreparedResource {
   uriPattern: string;
   template: ResourceTemplate;
   description: string | undefined;

@@ -82,6 +82,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
     // CRITICAL: Override MUST happen AFTER registerTools() — McpServer's lazy-init
     // registers the default tools/list handler on the first tool() call.
+    // Overriding before would cause assertCanSetRequestHandler to throw.
     const hasTools = prepared.length > 0;
     if (hasTools && (paginationCtx.enabled || paginationCtx.twoPhaseDiscovery)) {
       const getAllTools = getOriginalToolsList(mcpServer);

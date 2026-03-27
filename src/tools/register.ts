@@ -4,7 +4,7 @@ import type { ConvexClient } from "../types.js";
 import { convexArgsToZod } from "../validators.js";
 import type { CallContext, LifecycleHooks, OnCallResult, ToolDef } from "./types.js";
 
-export interface PreparedTool {
+interface PreparedTool {
   name: string;
   description: string;
   zodShape: Record<string, z.ZodTypeAny>;

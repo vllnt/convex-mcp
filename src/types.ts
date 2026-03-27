@@ -29,20 +29,22 @@ export interface AuthConfig {
   convexToken?: (apiKey: string) => Promise<string | undefined> | string | undefined;
 }
 
-export { type PaginationConfig, type ToolPage, type ToolSummary } from "./pagination/types.js";
-export { type ResourceDef } from "./resources/types.js";
-export { type CallContext, type FunctionType, type LifecycleHooks, type OnCallResult, type ToolDef } from "./tools/types.js";
+import type { PaginationConfig, ToolPage, ToolSummary } from "./pagination/types.js";
+import type { ResourceDef } from "./resources/types.js";
+import type { CallContext, FunctionType, LifecycleHooks, OnCallResult, ToolDef } from "./tools/types.js";
+
+export type { CallContext, FunctionType, LifecycleHooks, OnCallResult, PaginationConfig, ResourceDef, ToolDef, ToolPage, ToolSummary };
 
 export interface ServerConfig {
   auth: AuthConfig;
-  tools?: Record<string, import("./tools/types.js").ToolDef>;
-  resources?: Record<string, import("./resources/types.js").ResourceDef>;
+  tools?: Record<string, ToolDef>;
+  resources?: Record<string, ResourceDef>;
   convexUrl?: string;
   client?: ConvexClient;
-  hooks?: import("./tools/types.js").LifecycleHooks;
+  hooks?: LifecycleHooks;
   name?: string;
   version?: string;
-  pagination?: import("./pagination/types.js").PaginationConfig;
+  pagination?: PaginationConfig;
 }
 
 export interface ConvexMCPServer {
