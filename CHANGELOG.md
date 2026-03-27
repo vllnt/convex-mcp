@@ -13,17 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-phase tool discovery: `tools/list_summary` (name + description) and `tools/describe` (full schema on-demand)
 - `PaginationConfig` on `ServerConfig` with `pageSize` and `twoPhaseDiscovery` options
 - HMAC-signed cursors with constant-time verification (`crypto.subtle.verify`)
-- Cached tool list for pagination handlers (zero repeated schema conversion)
 - Exported `ToolSummary` and `ToolPage` types for consumer use
 - `pageSize` validation rejects NaN, floats, and values < 1
 - SDK canary test for `setRequestHandler` override compatibility
-- 104 tests with 100% line/statement/function coverage
+- 113 tests with 100% coverage on all metrics (statements, branches, functions, lines)
+
+### Changed
+
+- Restructured `src/` from flat files to domain-scoped folders (`tools/`, `resources/`, `pagination/`)
+- `server.ts` reduced from 458 to ~130 LOC (thin orchestrator)
+- Replaced 13 of 16 `as` type assertions with runtime type guards
+- Zero public API changes — DTS output identical
 
 ### Security
 
-- Constant-time HMAC verification prevents timing-based cursor attacks
+- Constant-time HMAC verification via `crypto.subtle.verify()` prevents timing-based cursor attacks
 - HMAC-signed cursors prevent cardinality leaks and tampering
 - `atob()` wrapped in try-catch for edge runtime compatibility (Cloudflare Workers)
+- Runtime type guards validate all parsed data (cursors, validators) before narrowing
 
 ## [0.1.1] - 2026-03-25
 

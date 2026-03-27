@@ -1,4 +1,5 @@
-import type { CallContext, ConvexValidator, OnCallResult, ToolDef } from "./types.js";
+import type { ConvexValidator } from "../types.js";
+import type { CallContext, OnCallResult, ToolDef } from "./types.js";
 
 interface ToolOptions {
   args?: ConvexValidator;

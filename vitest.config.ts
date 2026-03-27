@@ -8,12 +8,10 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/index.ts", "src/types.ts"],
+      exclude: ["src/index.ts", "src/types.ts", "src/*/types.ts"],
       thresholds: {
         statements: 100,
-        // branches: 98% due to v8 counting branches inside `v8 ignore` regions
-        // (HMAC-guarded defensive code + SDK canary guard — unreachable from public API)
-        branches: 98,
+        branches: 100,
         functions: 100,
         lines: 100,
       },
