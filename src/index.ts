@@ -1,3 +1,4 @@
+export type { ToolPage, ToolSummary } from "./pagination.js";
 export { resource } from "./resource.js";
 export { createMCPServer } from "./server.js";
 export { action, mutation, query } from "./tool.js";
@@ -10,6 +11,7 @@ export type {
   FunctionType,
   LifecycleHooks,
   OnCallResult,
+  PaginationConfig,
   ResourceDef,
   ServerConfig,
   ToolDef,

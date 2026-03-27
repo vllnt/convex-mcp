@@ -1,8 +1,10 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { ConvexHttpClient } from "convex/browser";
-import type { z } from "zod";
+import { z } from "zod";
 import { validateRequest } from "./auth.js";
+import { createPaginationContext, paginateTools } from "./pagination.js";
 import type { CallContext, ConvexClient, ConvexMCPServer, LifecycleHooks, OnCallResult, ResourceDef, ServerConfig, ToolDef } from "./types.js";
 import { convexArgsToZod } from "./validators.js";
 
@@ -72,6 +74,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
   const preparedTools = prepareTools(config.tools ?? {});
   const preparedResources = prepareResources(config.resources ?? {});
+  const paginationCtx = createPaginationContext(config.pagination);
 
   function createServerAndTransport(
     requestId: string,
@@ -90,6 +93,20 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
 
     registerTools(mcpServer, client, preparedTools, hooks, requestId, apiKey);
     registerResources(mcpServer, client, preparedResources);
+
+    // CRITICAL: Override MUST happen AFTER registerTools() — McpServer's lazy-init
+    // registers the default tools/list handler on the first tool() call.
+    // Overriding before would cause assertCanSetRequestHandler to throw.
+    const hasTools = preparedTools.length > 0;
+    if (hasTools && (paginationCtx.enabled || paginationCtx.twoPhaseDiscovery)) {
+      const getAllTools = getOriginalToolsList(mcpServer);
+      if (paginationCtx.enabled) {
+        registerPaginationHandlers(mcpServer, getAllTools, paginationCtx.pageSize, paginationCtx.secret);
+      }
+      if (paginationCtx.twoPhaseDiscovery) {
+        registerTwoPhaseHandlers(mcpServer, getAllTools, paginationCtx.pageSize, paginationCtx.secret);
+      }
+    }
 
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -325,3 +342,117 @@ function registerResources(
     );
   }
 }
+
+interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+}
+
+type ToolListFn = () => Promise<McpTool[]>;
+type OrigHandler = (req: unknown, extra: unknown) => Promise<{ tools: McpTool[] }>;
+
+/* v8 ignore start -- canary: only triggers if SDK removes tools/list handler */
+function assertHandler(handler: OrigHandler | undefined): OrigHandler {
+  if (!handler) throw new Error("[convex-mcp] tools/list handler not found — SDK API may have changed.");
+  return handler;
+}
+/* v8 ignore stop */
+
+function getOriginalToolsList(mcpServer: McpServer): ToolListFn {
+  type HandlerMap = Map<string, OrigHandler>;
+  const handlers = (mcpServer.server as unknown as { _requestHandlers: HandlerMap })._requestHandlers;
+  const origHandler = assertHandler(handlers.get("tools/list"));
+
+  let cached: McpTool[] | undefined;
+  return async (): Promise<McpTool[]> => {
+    if (cached) return cached;
+    const result = await origHandler(
+      { method: "tools/list", params: {} },
+      { signal: new AbortController().signal },
+    );
+    cached = result.tools;
+    return cached;
+  };
+}
+
+function registerPaginationHandlers(
+  mcpServer: McpServer,
+  getAllTools: ToolListFn,
+  pageSize: number,
+  secret: string,
+): void {
+  mcpServer.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+    const cursor = request.params?.cursor;
+    const allTools = await getAllTools();
+
+    if (cursor === undefined) {
+      return { tools: allTools };
+    }
+
+    const result = await paginateTools(allTools, "tools/list", pageSize, cursor, secret);
+    if ("error" in result) {
+      throw new McpError(ErrorCode.InvalidParams, result.error);
+    }
+    return { tools: result.tools, nextCursor: result.nextCursor };
+  });
+}
+
+function registerTwoPhaseHandlers(
+  mcpServer: McpServer,
+  getAllTools: ToolListFn,
+  pageSize: number,
+  secret: string,
+): void {
+  const listSummarySchema = z.object({
+    method: z.literal("tools/list_summary"),
+    params: z.object({ cursor: z.string().optional() }).optional(),
+  });
+
+  mcpServer.server.setRequestHandler(
+    listSummarySchema,
+    async (request) => {
+      const allTools = await getAllTools();
+      const summaries = allTools.map((t) => ({
+        name: t.name,
+        /* v8 ignore next -- both branches tested; v8 misreports ternary in .map() */
+        description: t.description !== undefined ? t.description : "",
+      }));
+
+      const cursor = request.params?.cursor;
+      if (cursor === undefined) {
+        return { tools: summaries };
+      }
+
+      const result = await paginateTools(summaries, "tools/list_summary", pageSize, cursor, secret);
+      if ("error" in result) {
+        throw new McpError(ErrorCode.InvalidParams, result.error);
+      }
+      return { tools: result.tools, nextCursor: result.nextCursor };
+    },
+  );
+
+  const describeSchema = z.object({
+    method: z.literal("tools/describe"),
+    params: z.object({ name: z.string().optional() }).optional(),
+  });
+
+  mcpServer.server.setRequestHandler(
+    describeSchema,
+    async (request) => {
+      const name = request.params?.name;
+      if (!name) {
+        throw new McpError(ErrorCode.InvalidParams, "Invalid params: 'name' is required");
+      }
+
+      const allTools = await getAllTools();
+      const tool = allTools.find((t) => t.name === name);
+      if (!tool) {
+        throw new McpError(ErrorCode.InvalidParams, `Invalid params: tool '${name}' not found`);
+      }
+
+      return { tool };
+    },
+  );
+}
+
