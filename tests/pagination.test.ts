@@ -398,7 +398,7 @@ describe("Pagination internals", () => {
 describe("cursor branch coverage", () => {
   const hmacSeed = "test-hmac-seed";
 
-  async function signPayload(payload: object, seed: string): Promise<string> {
+  async function signPayload(payload: unknown, seed: string): Promise<string> {
     const b64 = btoa(JSON.stringify(payload));
     const key = await crypto.subtle.importKey(
       "raw", new TextEncoder().encode(seed),
@@ -429,6 +429,24 @@ describe("cursor branch coverage", () => {
 
   it("rejects non-number offset", async () => {
     const cursor = await signPayload({ v: 1, m: "tools/list", o: "bad" }, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects non-object payload (string)", async () => {
+    const cursor = await signPayload("just-a-string", hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects non-object payload (null)", async () => {
+    const cursor = await signPayload(null, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects payload with missing fields", async () => {
+    const cursor = await signPayload({ v: 1 }, hmacSeed);
     const result = await decodeCursor(cursor, "tools/list", hmacSeed);
     expect("error" in result).toBe(true);
   });

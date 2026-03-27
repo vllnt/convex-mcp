@@ -32,10 +32,9 @@ export function registerResources(
         description,
         mimeType: "application/json",
       },
-      async (uri, params) => {
+      async (uri, params: Record<string, unknown>) => {
         try {
-          const args = params as Record<string, unknown>;
-          const result = await client.query(resourceDef.ref, args);
+          const result = await client.query(resourceDef.ref, params);
           return {
             contents: [{
               uri: uri.href,

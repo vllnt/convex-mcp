@@ -28,14 +28,14 @@ async function invokeHook(
   ctx: CallContext,
   toolDef: ToolDef,
 ): Promise<OnCallResult | void> {
-  const handler = ctx.phase === "error" && toolDef.onError
-    ? toolDef.onError
-    : hooks?.onToolCall;
-
-  if (!handler) return;
-
   try {
-    return await (handler as (ctx: CallContext) => Promise<OnCallResult | void>)(ctx);
+    if (ctx.phase === "error" && toolDef.onError) {
+      return await toolDef.onError(ctx as CallContext & { phase: "error" });
+    }
+    if (hooks?.onToolCall) {
+      return await hooks.onToolCall(ctx);
+    }
+    return;
   } catch (hookError) {
     console.error("[convex-mcp] hook error (swallowed)", {
       requestId: ctx.requestId,
@@ -75,7 +75,7 @@ export function registerTools(
       name,
       description,
       zodShape,
-      async (args) => {
+      async (args: Record<string, unknown>) => {
         const startedAt = Date.now();
         const { ref: _ref, onError: _onError, ...safeDef } = toolDef;
 
@@ -83,12 +83,12 @@ export function registerTools(
           requestId,
           toolName: name,
           toolDef: safeDef,
-          args: args as Record<string, unknown>,
+          args,
           apiKey,
           startedAt,
         };
 
-        const beforeCtx: CallContext = { ...baseCtx, phase: "before" as const };
+        const beforeCtx: CallContext = { ...baseCtx, phase: "before" };
         const beforeResult = await invokeHook(hooks, beforeCtx, toolDef);
         if (beforeResult?.abort) {
           return {
@@ -101,13 +101,13 @@ export function registerTools(
           const callPromise = (async () => {
             switch (toolDef.type) {
               case "query":
-                return await client.query(toolDef.ref, args as Record<string, unknown>);
+                return await client.query(toolDef.ref, args);
               case "mutation":
-                return await client.mutation(toolDef.ref, args as Record<string, unknown>);
+                return await client.mutation(toolDef.ref, args);
               case "action":
-                return await client.action(toolDef.ref, args as Record<string, unknown>);
+                return await client.action(toolDef.ref, args);
               default:
-                throw new Error(`Unknown function type: ${toolDef.type as string}`);
+                throw new Error(`Unknown function type: ${String(toolDef.type)}`);
             }
           })();
 

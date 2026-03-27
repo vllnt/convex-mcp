@@ -206,6 +206,18 @@ describe("convertValidator", () => {
     }))).toThrow('record key must be string or id, got "float64"');
   });
 
+  it("throws on record with invalid value validator", () => {
+    expect(() => convertValidator(makeValidator("record", {
+      key: makeValidator("string"),
+      value: "not-a-validator",
+    }))).toThrow("record (invalid value validator)");
+  });
+
+  it("throws on literal with unsupported value type", () => {
+    expect(() => convertValidator(makeValidator("literal", { value: undefined }))).toThrow("literal (unsupported value type)");
+    expect(() => convertValidator(makeValidator("literal", { value: { nested: true } }))).toThrow("literal (unsupported value type)");
+  });
+
   it("handles object with no fields (returns empty object schema)", () => {
     const schema = convertValidator(makeValidator("object"));
     expect(schema.parse({})).toEqual({});

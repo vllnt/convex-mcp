@@ -6,6 +6,12 @@ interface CursorPayload {
 
 const SEPARATOR = ".";
 
+function isCursorPayload(value: unknown): value is CursorPayload {
+  if (typeof value !== "object" || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return typeof obj.v === "number" && typeof obj.m === "string" && typeof obj.o === "number";
+}
+
 async function importKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
@@ -60,9 +66,10 @@ export async function decodeCursor(
 
   // Safe to parse without try-catch: HMAC verification above guarantees b64 is
   // a payload we signed, so atob + JSON.parse will not throw.
-  const payload = JSON.parse(atob(b64)) as CursorPayload;
-  if (payload.v !== 1) return { error: "invalid or expired cursor" };
-  if (payload.m !== expectedMethod) return { error: "invalid or expired cursor" };
-  if (typeof payload.o !== "number" || payload.o < 0) return { error: "invalid or expired cursor" };
-  return { offset: payload.o };
+  const raw: unknown = JSON.parse(atob(b64));
+  if (!isCursorPayload(raw)) return { error: "invalid or expired cursor" };
+  if (raw.v !== 1) return { error: "invalid or expired cursor" };
+  if (raw.m !== expectedMethod) return { error: "invalid or expired cursor" };
+  if (raw.o < 0) return { error: "invalid or expired cursor" };
+  return { offset: raw.o };
 }
