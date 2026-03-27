@@ -25,15 +25,12 @@ export function getOriginalToolsList(mcpServer: McpServer): ToolListFn {
   const handlers = (mcpServer.server as unknown as { _requestHandlers: HandlerMap })._requestHandlers;
   const origHandler = assertHandler(handlers.get("tools/list"));
 
-  let cached: McpTool[] | undefined;
   return async (): Promise<McpTool[]> => {
-    if (cached) return cached;
     const result = await origHandler(
       { method: "tools/list", params: {} },
       { signal: new AbortController().signal },
     );
-    cached = result.tools;
-    return cached;
+    return result.tools;
   };
 }
 

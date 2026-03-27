@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { decodeCursor, encodeCursor } from "../src/pagination/cursor.js";
 import { createMCPServer } from "../src/server.js";
 import { query } from "../src/tools/helpers.js";
 
@@ -391,6 +392,51 @@ describe("Pagination internals", () => {
     const data = await parseSSEResponse(response);
     expect(data.error).toBeDefined();
     expect(data.error.code).toBe(-32602);
+  });
+});
+
+describe("cursor branch coverage", () => {
+  const hmacSeed = "test-hmac-seed";
+
+  async function signPayload(payload: object, seed: string): Promise<string> {
+    const b64 = btoa(JSON.stringify(payload));
+    const key = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(seed),
+      { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(b64));
+    const sigB64 = btoa(Array.from(new Uint8Array(sig), (b) => String.fromCharCode(b)).join(""));
+    return `${b64}.${sigB64}`;
+  }
+
+  it("rejects wrong version (v !== 1)", async () => {
+    const cursor = await signPayload({ v: 2, m: "tools/list", o: 0 }, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects wrong method (m !== expectedMethod)", async () => {
+    const cursor = await signPayload({ v: 1, m: "tools/list_summary", o: 0 }, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects negative offset (o < 0)", async () => {
+    const cursor = await signPayload({ v: 1, m: "tools/list", o: -5 }, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects non-number offset", async () => {
+    const cursor = await signPayload({ v: 1, m: "tools/list", o: "bad" }, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("error" in result).toBe(true);
+  });
+
+  it("accepts valid cursor", async () => {
+    const cursor = await encodeCursor("tools/list", 10, hmacSeed);
+    const result = await decodeCursor(cursor, "tools/list", hmacSeed);
+    expect("offset" in result && result.offset).toBe(10);
   });
 });
 
