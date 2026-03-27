@@ -8,10 +8,26 @@ export class UnsupportedValidatorError extends Error {
   }
 }
 
+function isConvexValidator(value: unknown): value is ConvexValidator {
+  return typeof value === "object" && value !== null && "kind" in value && "isOptional" in value;
+}
+
+function isLiteralValue(value: unknown): value is string | number | boolean | null {
+  const t = typeof value;
+  return t === "string" || t === "number" || t === "boolean" || value === null;
+}
+
 function isAllStringLiteralUnion(
   members: ConvexValidator[],
-): boolean {
+): members is Array<ConvexValidator & { value: string }> {
   return members.length > 1 && members.every((m) => m.kind === "literal" && typeof m.value === "string");
+}
+
+// Callers guarantee arr.length >= 2 (pre-checked by isAllStringLiteralUnion or length === 1 early return)
+function asTuple<T>(arr: T[]): [T, T, ...T[]] {
+  /* v8 ignore next -- callers guarantee length >= 2 */
+  if (arr.length < 2) throw new Error("Expected at least 2 elements");
+  return [arr[0]!, arr[1]!, ...arr.slice(2)];
 }
 
 function convertKind(validator: ConvexValidator): z.ZodTypeAny {
@@ -41,8 +57,12 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
           : "Convex document ID",
       );
 
-    case "literal":
-      return z.literal(validator.value as string | number | boolean | null);
+    case "literal": {
+      if (!isLiteralValue(validator.value)) {
+        throw new UnsupportedValidatorError("literal (unsupported value type)");
+      }
+      return z.literal(validator.value);
+    }
 
     case "array": {
       if (!validator.element) {
@@ -67,16 +87,14 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
         throw new UnsupportedValidatorError("union (missing members)");
       }
       if (isAllStringLiteralUnion(validator.members)) {
-        const values = validator.members.map((m) => m.value as string);
-        return z.enum(values as [string, ...string[]]);
+        const values = validator.members.map((m) => m.value);
+        return z.enum(asTuple(values));
       }
       const converted = validator.members.map((m) => convertValidator(m));
       if (converted.length === 1) {
         return converted[0]!;
       }
-      return z.union(
-        converted as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]],
-      );
+      return z.union(asTuple(converted));
     }
 
     case "record": {
@@ -87,10 +105,12 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
       if (keyKind !== "string" && keyKind !== "id") {
         throw new UnsupportedValidatorError(`record key must be string or id, got "${keyKind}"`);
       }
-      return z.record(
-        convertValidator(validator.key) as z.ZodType<string>,
-        convertValidator(validator.value as unknown as ConvexValidator),
-      );
+      const valueValidator = validator.value;
+      if (!isConvexValidator(valueValidator)) {
+        throw new UnsupportedValidatorError("record (invalid value validator)");
+      }
+      // Key kind validated as "string" | "id" above — always maps to z.string()
+      return z.record(z.string(), convertValidator(valueValidator));
     }
 
     case "any":

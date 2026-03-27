@@ -1,7 +1,7 @@
-export type { ToolPage, ToolSummary } from "./pagination.js";
-export { resource } from "./resource.js";
+export type { ToolPage, ToolSummary } from "./pagination/types.js";
+export { resource } from "./resources/helpers.js";
 export { createMCPServer } from "./server.js";
-export { action, mutation, query } from "./tool.js";
+export { action, mutation, query } from "./tools/helpers.js";
 export type {
   AuthConfig,
   CallContext,
