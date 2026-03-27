@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-27
+
+### Added
+
+- Opt-in cursor-based pagination for `tools/list` (MCP spec-compliant)
+- Two-phase tool discovery: `tools/list_summary` (name + description) and `tools/describe` (full schema on-demand)
+- `PaginationConfig` on `ServerConfig` with `pageSize` and `twoPhaseDiscovery` options
+- HMAC-signed cursors with constant-time verification (`crypto.subtle.verify`)
+- Cached tool list for pagination handlers (zero repeated schema conversion)
+- Exported `ToolSummary` and `ToolPage` types for consumer use
+- `pageSize` validation rejects NaN, floats, and values < 1
+- SDK canary test for `setRequestHandler` override compatibility
+- 104 tests with 100% line/statement/function coverage
+
+### Security
+
+- Constant-time HMAC verification prevents timing-based cursor attacks
+- HMAC-signed cursors prevent cardinality leaks and tampering
+- `atob()` wrapped in try-catch for edge runtime compatibility (Cloudflare Workers)
+
 ## [0.1.1] - 2026-03-25
 
 ### Fixed

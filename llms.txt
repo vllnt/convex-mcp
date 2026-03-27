@@ -1,10 +1,10 @@
 # @vllnt/convex-mcp
 
-> Expose Convex functions as MCP tools via Streamable HTTP
+> Expose Convex functions as MCP tools via Streamable HTTP — with opt-in pagination and two-phase discovery
 
 ## Overview
 
-`@vllnt/convex-mcp` turns Convex queries, mutations, and actions into MCP (Model Context Protocol) tools that any LLM client can call. Convex validators are automatically converted to JSON Schema for tool definitions. Auth is mandatory (default-deny).
+`@vllnt/convex-mcp` turns Convex queries, mutations, and actions into MCP (Model Context Protocol) tools that any LLM client can call. Convex validators are automatically converted to JSON Schema for tool definitions. Auth is mandatory (default-deny). Supports cursor-based pagination and two-phase tool discovery for large tool catalogs.
 
 ## Quick Start
 
@@ -26,6 +26,10 @@ export const mcp = createMCPServer({
       description: "Create a task",
     }),
   },
+  pagination: {
+    pageSize: 20,
+    twoPhaseDiscovery: true,
+  },
 });
 
 // app/api/mcp/route.ts
@@ -35,7 +39,7 @@ export const { GET, POST } = mcp.handler();
 
 ## API
 
-- `createMCPServer(config)` — Create an MCP server with auth, tools, and resources
+- `createMCPServer(config)` — Create an MCP server with auth, tools, resources, and pagination
 - `query(ref, opts?)` — Wrap a Convex query as an MCP tool
 - `mutation(ref, opts?)` — Wrap a Convex mutation as an MCP tool
 - `action(ref, opts?)` — Wrap a Convex action as an MCP tool
@@ -43,6 +47,16 @@ export const { GET, POST } = mcp.handler();
 - `convexArgsToZod(validator)` — Convert Convex v.object() validator to Zod schema
 - `convertValidator(validator)` — Convert any Convex validator to Zod schema
 - `UnsupportedValidatorError` — Error thrown for unrecognized validator kinds
+
+## Pagination
+
+- `pagination.pageSize` — Tools per page when client sends a cursor (integer >= 1)
+- `pagination.twoPhaseDiscovery` — Enable `tools/list_summary` + `tools/describe` custom methods
+- `tools/list` without cursor returns ALL tools (backwards-compatible)
+- `tools/list` with `cursor: ""` starts pagination, returns `nextCursor`
+- `tools/list_summary` returns name + description only (no inputSchema) — ~90% token reduction
+- `tools/describe` with `{ name }` returns full tool definition on-demand
+- Cursors are HMAC-signed, constant-time verified, per-instance secret
 
 ## Docs
 
@@ -53,3 +67,10 @@ export const { GET, POST } = mcp.handler();
 - [Security](docs/security.md)
 - [Examples](docs/examples.md)
 - [Full LLM Context](llms-full.txt)
+
+## Optional
+
+- [Contributing](CONTRIBUTING.md): Contribution guidelines and development setup
+- [Changelog](CHANGELOG.md): Version history and release notes
+- [Security Policy](SECURITY.md): Vulnerability reporting and disclosure
+- [License](LICENSE): MIT license
