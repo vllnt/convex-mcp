@@ -32,8 +32,13 @@ async function hmacSign(payload: string, secret: string): Promise<ArrayBuffer> {
 }
 
 async function hmacVerify(payload: string, signature: string, secret: string): Promise<boolean> {
+  let sigBytes: Uint8Array<ArrayBuffer>;
+  try {
+    sigBytes = new Uint8Array(Array.from(atob(signature), (c) => c.charCodeAt(0)));
+  } catch {
+    return false;
+  }
   const key = await importKey(secret, ["verify"]);
-  const sigBytes = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
   return crypto.subtle.verify("HMAC", key, sigBytes, new TextEncoder().encode(payload));
 }
 
@@ -127,8 +132,8 @@ export function createPaginationContext(config: PaginationConfig | undefined): {
   if (!config) {
     return { secret: "", pageSize: 0, twoPhaseDiscovery: false, enabled: false };
   }
-  if (config.pageSize < 1) {
-    throw new Error("pagination.pageSize must be >= 1");
+  if (!Number.isInteger(config.pageSize) || config.pageSize < 1) {
+    throw new Error("pagination.pageSize must be a positive integer >= 1");
   }
   return {
     secret: generateSecret(),

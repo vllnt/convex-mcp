@@ -396,9 +396,9 @@ describe("Pagination internals", () => {
     const server = createPaginatedServer(3, 2);
     const handler = server.handler();
 
-    // Create a cursor with valid HMAC separator but invalid base64 content
-    // This exercises the try/catch in decodeCursor when atob/JSON.parse fails
-    const response = await handler.POST(mcpRequest("tools/list", { cursor: "!!!invalid-base64.fakesig" }));
+    // Exercises hmacVerify try-catch: non-base64 chars in signature slot
+    // cause atob() to throw in strict runtimes
+    const response = await handler.POST(mcpRequest("tools/list", { cursor: "validpayload.\x00\x01\x02non-base64!" }));
     const data = await parseSSEResponse(response);
     expect(data.error).toBeDefined();
     expect(data.error.code).toBe(-32602);
@@ -412,7 +412,7 @@ describe("PaginationConfig validation", () => {
       convexUrl: MOCK_CONVEX_URL,
       tools: createTools(3),
       pagination: { pageSize: 0 },
-    })).toThrow("pagination.pageSize must be >= 1");
+    })).toThrow("pagination.pageSize must be a positive integer >= 1");
   });
 
   it("pageSize=-1 throws at construction", () => {
@@ -421,7 +421,25 @@ describe("PaginationConfig validation", () => {
       convexUrl: MOCK_CONVEX_URL,
       tools: createTools(3),
       pagination: { pageSize: -1 },
-    })).toThrow("pagination.pageSize must be >= 1");
+    })).toThrow("pagination.pageSize must be a positive integer >= 1");
+  });
+
+  it("pageSize=NaN throws at construction", () => {
+    expect(() => createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: createTools(3),
+      pagination: { pageSize: NaN },
+    })).toThrow("pagination.pageSize must be a positive integer >= 1");
+  });
+
+  it("pageSize=1.5 throws at construction", () => {
+    expect(() => createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: createTools(3),
+      pagination: { pageSize: 1.5 },
+    })).toThrow("pagination.pageSize must be a positive integer >= 1");
   });
 });
 
