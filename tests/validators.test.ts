@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import { convertValidator, convexArgsToZod, UnsupportedValidatorError } from "../src/validators.js";
 
 function makeValidator(kind: string, extra: Record<string, unknown> = {}): any {
@@ -128,7 +128,7 @@ describe("convertValidator", () => {
     expect(schema.parse("b")).toBe("b");
     expect(() => schema.parse("d")).toThrow();
 
-    const jsonSchema = zodToJsonSchema(schema);
+    const jsonSchema = z.toJSONSchema(schema);
     expect(jsonSchema).toHaveProperty("enum");
     expect((jsonSchema as any).enum).toEqual(["a", "b", "c"]);
   });

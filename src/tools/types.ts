@@ -2,6 +2,9 @@ import type { ConvexValidator } from "../types.js";
 
 export type FunctionType = "query" | "mutation" | "action";
 
+export type HookResult = OnCallResult | undefined;
+export type HookReturn = HookResult | Promise<HookResult> | Promise<void>;
+
 export interface ToolDef {
   ref: unknown;
   type: FunctionType;
@@ -9,7 +12,7 @@ export interface ToolDef {
   description?: string;
   tags?: Record<string, string>;
   timeout?: number;
-  onError?: (ctx: CallContext & { phase: "error" }) => Promise<OnCallResult | void> | OnCallResult | void;
+  onError?: (ctx: CallContext & { phase: "error" }) => HookReturn;
 }
 
 export interface CallContext {
@@ -35,5 +38,5 @@ export interface OnCallResult {
 }
 
 export interface LifecycleHooks {
-  onToolCall?: (ctx: CallContext) => Promise<OnCallResult | void> | OnCallResult | void;
+  onToolCall?: (ctx: CallContext) => HookReturn;
 }

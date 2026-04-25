@@ -17,7 +17,9 @@ vi.mock("convex/browser", () => {
     setAuth: vi.fn(),
   };
   return {
-    ConvexHttpClient: vi.fn(() => mockClient),
+    ConvexHttpClient: vi.fn(function MockConvexHttpClient() {
+      return mockClient;
+    }),
     __mockClient: mockClient,
   };
 });
