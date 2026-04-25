@@ -193,6 +193,29 @@ describe("lifecycle hooks", () => {
     expect(serverHookCalled).not.toHaveBeenCalled();
   });
 
+  it("per-tool onError can return undefined and fall back to generic message", async () => {
+    const mockClient = await getMockClient();
+    mockClient.mutation.mockRejectedValueOnce(new Error("Conflict"));
+
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        create: mutation(null, {
+          args: makeValidator("object", { fields: { name: makeValidator("string") } }),
+          description: "Create",
+          onError: async () => undefined,
+        }),
+      },
+    });
+
+    const data = await parseSSEResponse(
+      await server.handler().POST(mcpRequest("tools/call", { name: "create", arguments: { name: "test" } })),
+    );
+    expect(data.result.isError).toBe(true);
+    expect(data.result.content[0].text).toBe("Function execution failed");
+  });
+
   it("tags accessible in hook context (AC-5)", async () => {
     const { calls, hook } = createHookCollector();
     const server = createMCPServer({
@@ -217,6 +240,22 @@ describe("lifecycle hooks", () => {
       throw new Error("Expected before hook call");
     }
     expect(before.toolDef.tags).toEqual({ tier: "premium", feature: "projects" });
+  });
+
+  it("timeout-enabled tool call succeeds when resolved in time", async () => {
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        fast: query(null, { args: makeValidator("object", { fields: {} }), description: "Fast", timeout: 50 }),
+      },
+    });
+
+    const data = await parseSSEResponse(
+      await server.handler().POST(mcpRequest("tools/call", { name: "fast", arguments: {} })),
+    );
+    expect(data.result.isError).toBeUndefined();
+    expect(JSON.parse(data.result.content[0].text)).toEqual({ id: "1", name: "Test" });
   });
 
   it("timeout aborts long-running tool call (AC-6)", async () => {

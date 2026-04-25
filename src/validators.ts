@@ -29,8 +29,9 @@ function hasAtLeastTwo<T>(arr: T[]): arr is [T, T, ...T[]] {
 
 // Callers guarantee arr.length >= 2 (pre-checked by isAllStringLiteralUnion or length === 1 early return)
 function asTuple<T>(arr: T[]): [T, T, ...T[]] {
-  /* v8 ignore next -- callers guarantee length >= 2 */
+  /* v8 ignore start -- callers guarantee length >= 2 */
   if (!hasAtLeastTwo(arr)) throw new Error("Expected at least 2 elements");
+  /* v8 ignore stop */
   return arr;
 }
 
@@ -97,9 +98,9 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
       const converted = validator.members.map((m) => convertValidator(m));
       if (converted.length === 1) {
         const [single] = converted;
-        if (!single) {
-          throw new UnsupportedValidatorError("union (missing member)");
-        }
+        /* v8 ignore start -- impossible after converted.length === 1; needed for noUncheckedIndexedAccess */
+        if (!single) throw new UnsupportedValidatorError("union (missing member)");
+        /* v8 ignore stop */
         return single;
       }
       return z.union(asTuple(converted));
