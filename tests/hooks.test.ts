@@ -17,7 +17,9 @@ vi.mock("convex/browser", () => {
     setAuth: vi.fn(),
   };
   return {
-    ConvexHttpClient: vi.fn(() => mockClient),
+    ConvexHttpClient: vi.fn(function MockConvexHttpClient() {
+      return mockClient;
+    }),
     __mockClient: mockClient,
   };
 });
@@ -50,7 +52,7 @@ function mcpRequest(method: string, params: Record<string, unknown> = {}, id: nu
 async function parseSSEResponse(response: Response): Promise<any> {
   const text = await response.text();
   const dataLine = text.split("\n").find((line) => line.startsWith("data: "));
-  if (!dataLine) throw new Error("No data line in SSE response: " + text);
+  if (!dataLine) throw new Error(`No data line in SSE response: ${text}`);
   return JSON.parse(dataLine.slice(6));
 }
 
@@ -75,15 +77,21 @@ describe("lifecycle hooks", () => {
     const response = await server.handler().POST(mcpRequest("tools/call", { name: "list", arguments: {} }));
     await response.text();
 
-    const before = calls.find((c) => c.phase === "before")!;
+    const before = calls.find((c) => c.phase === "before");
     expect(before).toBeDefined();
+    if (!before) {
+      throw new Error("Expected before hook call");
+    }
     expect(before.requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(before.toolName).toBe("list");
     expect(before.apiKey).toBe("test-key");
     expect(before.startedAt).toBeGreaterThan(0);
 
-    const success = calls.find((c) => c.phase === "success")!;
+    const success = calls.find((c) => c.phase === "success");
     expect(success).toBeDefined();
+    if (!success) {
+      throw new Error("Expected success hook call");
+    }
     expect(success.result).toEqual({ id: "1", name: "Test" });
     expect(success.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -203,7 +211,11 @@ describe("lifecycle hooks", () => {
     const response = await server.handler().POST(mcpRequest("tools/call", { name: "list", arguments: {} }));
     await response.text();
 
-    const before = calls.find((c) => c.phase === "before")!;
+    const before = calls.find((c) => c.phase === "before");
+    expect(before).toBeDefined();
+    if (!before) {
+      throw new Error("Expected before hook call");
+    }
     expect(before.toolDef.tags).toEqual({ tier: "premium", feature: "projects" });
   });
 
