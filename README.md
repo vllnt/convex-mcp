@@ -79,7 +79,7 @@ createMCPServer({
   resources?: Record<string, ResourceDef>;
   convexUrl?: string;      // defaults to CONVEX_URL or NEXT_PUBLIC_CONVEX_URL
   name?: string;           // MCP server name (default: "convex-mcp")
-  version?: string;        // MCP server version (default: "0.2.0")
+  version?: string;        // MCP server version (default: "0.3.0")
   pagination?: PaginationConfig;  // opt-in pagination + two-phase discovery
 })
 ```

@@ -55,7 +55,7 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   }
 
   const serverName = config.name ?? "convex-mcp";
-  const serverVersion = config.version ?? "0.2.0";
+  const serverVersion = config.version ?? "0.3.0";
   const hooks = config.hooks;
 
   const prepared = prepareTools(config.tools ?? {});
