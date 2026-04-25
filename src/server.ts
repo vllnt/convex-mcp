@@ -75,7 +75,15 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
       version: serverVersion,
     });
 
-    const client = injectedClient ?? createDefaultClient(resolvedConvexUrl!, convexToken);
+    let client: ConvexClient;
+    if (injectedClient) {
+      client = injectedClient;
+    } else {
+      if (!resolvedConvexUrl) {
+        throw new Error("Convex URL not found after configuration validation.");
+      }
+      client = createDefaultClient(resolvedConvexUrl, convexToken);
+    }
 
     registerTools(mcpServer, client, prepared, hooks, requestId, apiKey);
     registerResources(mcpServer, client, preparedRes);

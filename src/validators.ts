@@ -23,11 +23,15 @@ function isAllStringLiteralUnion(
   return members.length > 1 && members.every((m) => m.kind === "literal" && typeof m.value === "string");
 }
 
+function hasAtLeastTwo<T>(arr: T[]): arr is [T, T, ...T[]] {
+  return arr.length >= 2;
+}
+
 // Callers guarantee arr.length >= 2 (pre-checked by isAllStringLiteralUnion or length === 1 early return)
 function asTuple<T>(arr: T[]): [T, T, ...T[]] {
   /* v8 ignore next -- callers guarantee length >= 2 */
-  if (arr.length < 2) throw new Error("Expected at least 2 elements");
-  return [arr[0]!, arr[1]!, ...arr.slice(2)];
+  if (!hasAtLeastTwo(arr)) throw new Error("Expected at least 2 elements");
+  return arr;
 }
 
 function convertKind(validator: ConvexValidator): z.ZodTypeAny {
@@ -92,7 +96,11 @@ function convertKind(validator: ConvexValidator): z.ZodTypeAny {
       }
       const converted = validator.members.map((m) => convertValidator(m));
       if (converted.length === 1) {
-        return converted[0]!;
+        const [single] = converted;
+        if (!single) {
+          throw new UnsupportedValidatorError("union (missing member)");
+        }
+        return single;
       }
       return z.union(asTuple(converted));
     }
