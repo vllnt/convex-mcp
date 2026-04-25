@@ -1,12 +1,12 @@
 import type { ConvexValidator } from "../types.js";
-import type { CallContext, OnCallResult, ToolDef } from "./types.js";
+import type { CallContext, HookReturn, ToolDef } from "./types.js";
 
 interface ToolOptions {
   args?: ConvexValidator;
   description?: string;
   tags?: Record<string, string>;
   timeout?: number;
-  onError?: (ctx: CallContext & { phase: "error" }) => Promise<OnCallResult | void> | OnCallResult | void;
+  onError?: (ctx: CallContext & { phase: "error" }) => HookReturn;
 }
 
 export function query(ref: unknown, options: ToolOptions = {}): ToolDef {

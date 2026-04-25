@@ -27,13 +27,15 @@ async function invokeHook(
   hooks: LifecycleHooks | undefined,
   ctx: CallContext,
   toolDef: ToolDef,
-): Promise<OnCallResult | void> {
+): Promise<OnCallResult | undefined> {
   try {
     if (ctx.phase === "error" && toolDef.onError) {
-      return await toolDef.onError(ctx as CallContext & { phase: "error" });
+      const result = await toolDef.onError(ctx as CallContext & { phase: "error" });
+      return result ?? undefined;
     }
     if (hooks?.onToolCall) {
-      return await hooks.onToolCall(ctx);
+      const result = await hooks.onToolCall(ctx);
+      return result ?? undefined;
     }
     return;
   } catch (hookError) {

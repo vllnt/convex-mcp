@@ -13,7 +13,7 @@ const mcp = createMCPServer({
   resources?: Record<string, ResourceDef>;
   convexUrl?: string;      // defaults to CONVEX_URL or NEXT_PUBLIC_CONVEX_URL env var
   name?: string;           // MCP server name (default: "convex-mcp")
-  version?: string;        // MCP server version (default: "0.2.0")
+  version?: string;        // MCP server version (default: "0.3.0")
   pagination?: PaginationConfig;  // opt-in pagination + two-phase discovery
 });
 ```
@@ -27,7 +27,7 @@ const mcp = createMCPServer({
 | `resources` | `Record<string, ResourceDef>` | No | `{}` | Named MCP resources. Keys are URI template patterns. |
 | `convexUrl` | `string` | No | env var | Convex deployment URL. Falls back to `CONVEX_URL` then `NEXT_PUBLIC_CONVEX_URL`. |
 | `name` | `string` | No | `"convex-mcp"` | Server name reported in MCP `initialize` response. |
-| `version` | `string` | No | `"0.2.0"` | Server version reported in MCP `initialize` response. |
+| `version` | `string` | No | `"0.3.0"` | Server version reported in MCP `initialize` response. |
 | `pagination` | `PaginationConfig` | No | — | Opt-in pagination and two-phase discovery. See [Pagination](#pagination). |
 
 ### Throws

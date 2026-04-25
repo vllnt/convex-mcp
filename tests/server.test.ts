@@ -17,7 +17,9 @@ vi.mock("convex/browser", () => {
     setAuth: vi.fn(),
   };
   return {
-    ConvexHttpClient: vi.fn(() => mockClient),
+    ConvexHttpClient: vi.fn(function MockConvexHttpClient() {
+      return mockClient;
+    }),
     __mockClient: mockClient,
   };
 });
@@ -76,7 +78,7 @@ function mcpRequest(method: string, params: Record<string, unknown> = {}, id: nu
 async function parseSSEResponse(response: Response): Promise<any> {
   const text = await response.text();
   const dataLine = text.split("\n").find((line) => line.startsWith("data: "));
-  if (!dataLine) throw new Error("No data line in SSE response: " + text);
+  if (!dataLine) throw new Error(`No data line in SSE response: ${text}`);
   return JSON.parse(dataLine.slice(6));
 }
 

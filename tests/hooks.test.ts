@@ -17,7 +17,9 @@ vi.mock("convex/browser", () => {
     setAuth: vi.fn(),
   };
   return {
-    ConvexHttpClient: vi.fn(() => mockClient),
+    ConvexHttpClient: vi.fn(function MockConvexHttpClient() {
+      return mockClient;
+    }),
     __mockClient: mockClient,
   };
 });
@@ -50,7 +52,7 @@ function mcpRequest(method: string, params: Record<string, unknown> = {}, id: nu
 async function parseSSEResponse(response: Response): Promise<any> {
   const text = await response.text();
   const dataLine = text.split("\n").find((line) => line.startsWith("data: "));
-  if (!dataLine) throw new Error("No data line in SSE response: " + text);
+  if (!dataLine) throw new Error(`No data line in SSE response: ${text}`);
   return JSON.parse(dataLine.slice(6));
 }
 
@@ -75,15 +77,21 @@ describe("lifecycle hooks", () => {
     const response = await server.handler().POST(mcpRequest("tools/call", { name: "list", arguments: {} }));
     await response.text();
 
-    const before = calls.find((c) => c.phase === "before")!;
+    const before = calls.find((c) => c.phase === "before");
     expect(before).toBeDefined();
+    if (!before) {
+      throw new Error("Expected before hook call");
+    }
     expect(before.requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(before.toolName).toBe("list");
     expect(before.apiKey).toBe("test-key");
     expect(before.startedAt).toBeGreaterThan(0);
 
-    const success = calls.find((c) => c.phase === "success")!;
+    const success = calls.find((c) => c.phase === "success");
     expect(success).toBeDefined();
+    if (!success) {
+      throw new Error("Expected success hook call");
+    }
     expect(success.result).toEqual({ id: "1", name: "Test" });
     expect(success.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -185,6 +193,29 @@ describe("lifecycle hooks", () => {
     expect(serverHookCalled).not.toHaveBeenCalled();
   });
 
+  it("per-tool onError can return undefined and fall back to generic message", async () => {
+    const mockClient = await getMockClient();
+    mockClient.mutation.mockRejectedValueOnce(new Error("Conflict"));
+
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        create: mutation(null, {
+          args: makeValidator("object", { fields: { name: makeValidator("string") } }),
+          description: "Create",
+          onError: async () => undefined,
+        }),
+      },
+    });
+
+    const data = await parseSSEResponse(
+      await server.handler().POST(mcpRequest("tools/call", { name: "create", arguments: { name: "test" } })),
+    );
+    expect(data.result.isError).toBe(true);
+    expect(data.result.content[0].text).toBe("Function execution failed");
+  });
+
   it("tags accessible in hook context (AC-5)", async () => {
     const { calls, hook } = createHookCollector();
     const server = createMCPServer({
@@ -203,8 +234,28 @@ describe("lifecycle hooks", () => {
     const response = await server.handler().POST(mcpRequest("tools/call", { name: "list", arguments: {} }));
     await response.text();
 
-    const before = calls.find((c) => c.phase === "before")!;
+    const before = calls.find((c) => c.phase === "before");
+    expect(before).toBeDefined();
+    if (!before) {
+      throw new Error("Expected before hook call");
+    }
     expect(before.toolDef.tags).toEqual({ tier: "premium", feature: "projects" });
+  });
+
+  it("timeout-enabled tool call succeeds when resolved in time", async () => {
+    const server = createMCPServer({
+      auth: { validate: async () => true },
+      convexUrl: MOCK_CONVEX_URL,
+      tools: {
+        fast: query(null, { args: makeValidator("object", { fields: {} }), description: "Fast", timeout: 50 }),
+      },
+    });
+
+    const data = await parseSSEResponse(
+      await server.handler().POST(mcpRequest("tools/call", { name: "fast", arguments: {} })),
+    );
+    expect(data.result.isError).toBeUndefined();
+    expect(JSON.parse(data.result.content[0].text)).toEqual({ id: "1", name: "Test" });
   });
 
   it("timeout aborts long-running tool call (AC-6)", async () => {

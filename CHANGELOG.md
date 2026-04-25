@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-25
+
+### Changed
+
+- Upgraded core runtime and development dependencies, including MCP SDK 1.29, Convex 1.36, Vitest 4, and TypeScript 6
+- Moved the exported validator helpers onto Zod 4, making the public API align with the new schema runtime
+- Replaced `zod-to-json-schema` in tests with Zod 4's built-in JSON Schema support
+- Added TS 6 deprecation silencing for DTS builds and tightened a few internal/test patterns required by newer toolchain rules
+
 ## [0.2.0] - 2026-03-27
 
 ### Added
