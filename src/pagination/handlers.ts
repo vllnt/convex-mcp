@@ -49,10 +49,9 @@ async function paginateTools<T extends object>(
     offset = decoded.offset;
   }
 
-  /* v8 ignore next 3 -- unreachable from public API: HMAC prevents crafting out-of-bounds cursors */
-  if (offset >= tools.length && tools.length > 0) {
-    return { error: "invalid or expired cursor" };
-  }
+  /* v8 ignore start -- unreachable from public API: HMAC prevents crafting out-of-bounds cursors */
+  if (offset >= tools.length && tools.length > 0) return { error: "invalid or expired cursor" };
+  /* v8 ignore stop */
 
   const page = tools.slice(offset, offset + pageSize);
   const hasMore = offset + pageSize < tools.length;

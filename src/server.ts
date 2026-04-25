@@ -79,9 +79,9 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
     if (injectedClient) {
       client = injectedClient;
     } else {
-      if (!resolvedConvexUrl) {
-        throw new Error("Convex URL not found after configuration validation.");
-      }
+      /* v8 ignore start -- configuration validation guarantees a URL when no client is injected */
+      if (!resolvedConvexUrl) throw new Error("Convex URL not found after configuration validation.");
+      /* v8 ignore stop */
       client = createDefaultClient(resolvedConvexUrl, convexToken);
     }
 
@@ -92,11 +92,9 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
     // registers the default tools/list handler on the first tool() call.
     // Overriding before would cause assertCanSetRequestHandler to throw.
     const hasTools = prepared.length > 0;
-    if (hasTools && (paginationCtx.enabled || paginationCtx.twoPhaseDiscovery)) {
+    if (hasTools && paginationCtx.enabled) {
       const getAllTools = getOriginalToolsList(mcpServer);
-      if (paginationCtx.enabled) {
-        registerPaginationHandlers(mcpServer, getAllTools, paginationCtx.pageSize, paginationCtx.secret);
-      }
+      registerPaginationHandlers(mcpServer, getAllTools, paginationCtx.pageSize, paginationCtx.secret);
       if (paginationCtx.twoPhaseDiscovery) {
         registerTwoPhaseHandlers(mcpServer, getAllTools, paginationCtx.pageSize, paginationCtx.secret);
       }
