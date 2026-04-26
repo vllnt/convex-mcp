@@ -79,9 +79,6 @@ jobs:
 
       - name: Publish canary
         run: |
-          sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
-          unset NODE_AUTH_TOKEN
-
           BASE_VERSION=$(node -p "require('./package.json').version")
           SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
           CANARY_VERSION="${BASE_VERSION}-canary.${SHORT_SHA}"
@@ -171,8 +168,6 @@ jobs:
 
       - name: Publish to npm
         run: |
-          sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
-          unset NODE_AUTH_TOKEN
           npm publish --tag latest --provenance --access public --ignore-scripts
 
       - name: Create GitHub Release
