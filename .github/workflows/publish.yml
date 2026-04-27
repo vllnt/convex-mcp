@@ -7,16 +7,7 @@ on:
       - "src/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/publish.yml"
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump type"
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
+  workflow_dispatch: {}
 
 concurrency:
   group: publish-${{ github.event_name }}
@@ -115,12 +106,15 @@ jobs:
 
       - run: pnpm build
 
-      - name: Bump version
+      - name: Read version + guard against retag
         id: version
         run: |
-          npm version ${{ inputs.bump }} --no-git-tag-version --ignore-scripts
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists. Bump package.json on main via a PR before dispatching."
+            exit 1
+          fi
 
       - name: Generate changelog
         id: changelog
@@ -159,14 +153,12 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Commit and tag
+      - name: Tag release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          git commit -m "chore(release): v${{ steps.version.outputs.version }}"
           git tag -a "v${{ steps.version.outputs.version }}" -m "v${{ steps.version.outputs.version }}"
-          git push origin main --follow-tags
+          git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Publish to npm
         run: |
@@ -179,6 +171,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cat <<'NOTES_EOF' > /tmp/release-notes.md
+          ${{ steps.changelog.outputs.body }}
+          NOTES_EOF
           gh release create "v${{ steps.version.outputs.version }}" \
             --title "@vllnt/convex-mcp v${{ steps.version.outputs.version }}" \
-            --notes "${{ steps.changelog.outputs.body }}"
+            --notes-file /tmp/release-notes.md
