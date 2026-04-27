@@ -175,12 +175,13 @@ Convex validators are automatically converted to JSON Schema for MCP tool defini
 
 - **Default-deny**: Auth is required. No `validate` = startup error.
 - **Generic errors**: Convex error messages are never leaked to MCP responses (may contain PII). Only "Function execution failed" is returned.
-- **No function-level authz** (v1): A valid API key grants access to all exposed tools. Scope tools carefully.
+- **Per-action authorization (v0.3.0)**: The `onToolCall` hook can return `extendArgs` to inject server-resolved context (e.g. `_mcp_apiKey`, scopes, tenantId) into the dispatched function's args. The action handler re-validates the injected context as defense-in-depth — even if the framework hook is bypassed, the action stays safe. See [Security › Server-side Context Propagation](docs/security.md#server-side-context-propagation-v030).
+- **Reserved `_` prefix (v0.3.0)**: Arg keys starting with `_` are framework-controlled. Stripped from the published JSON Schema and rejected at the handler boundary; only the framework can inject them via `extendArgs`. Prevents callers from spoofing server-injected context.
 
 ### Known Limitations
 
 - **Validator duplication**: You must provide Convex validators in the MCP config alongside function references. FunctionReference carries no runtime schema info. We're exploring codegen for v2.
-- **Service account model**: By default, Convex functions execute without user identity (`ctx.auth` is null). Use `convexToken` in auth config to propagate identity.
+- **Service account model**: By default, Convex functions execute without user identity (`ctx.auth` is null). Use `convexToken` in auth config to propagate identity, or `extendArgs` for arg-level context propagation (v0.3.0).
 - **Serverless timeouts**: Vercel Hobby has 10s timeout, Pro has 60s. Use Fluid Compute for long-running actions.
 
 ## Docs

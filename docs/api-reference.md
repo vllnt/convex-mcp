@@ -15,6 +15,7 @@ const mcp = createMCPServer({
   name?: string;           // MCP server name (default: "convex-mcp")
   version?: string;        // MCP server version (default: "0.3.0")
   pagination?: PaginationConfig;  // opt-in pagination + two-phase discovery
+  hooks?: LifecycleHooks;  // before/success/error tool-call hooks
 });
 ```
 
@@ -29,6 +30,7 @@ const mcp = createMCPServer({
 | `name` | `string` | No | `"convex-mcp"` | Server name reported in MCP `initialize` response. |
 | `version` | `string` | No | `"0.3.0"` | Server version reported in MCP `initialize` response. |
 | `pagination` | `PaginationConfig` | No | — | Opt-in pagination and two-phase discovery. See [Pagination](#pagination). |
+| `hooks` | `LifecycleHooks` | No | — | Lifecycle hooks for tool calls. See [`LifecycleHooks`](#lifecyclehooks). |
 
 ### Throws
 
@@ -203,6 +205,112 @@ Request arrives
 
 ---
 
+## `LifecycleHooks`
+
+```typescript
+interface LifecycleHooks {
+  onToolCall?: (ctx: CallContext) => Promise<OnCallResult | void> | OnCallResult | void;
+}
+```
+
+Pass via `createMCPServer({ hooks: { onToolCall } })`. The hook fires three times per tool call: `before` (pre-dispatch), `success` (after the dispatched function resolves), and `error` (after it throws).
+
+| Phase | Purpose |
+|-------|---------|
+| `before` | Validate, abort, inject context via `extendArgs`. The only phase whose return value affects dispatch. |
+| `success` | Observe successful results (logging, metrics). Return value is ignored. |
+| `error` | Customize the error message returned to the MCP client (`return { message: "..." }`). |
+
+Per-tool overrides: `ToolDef.onError` runs before `LifecycleHooks.onToolCall` for the `error` phase.
+
+---
+
+## `CallContext`
+
+```typescript
+interface CallContext {
+  requestId: string;          // crypto.randomUUID() — same across before/success/error for one tool call
+  toolName: string;           // the registered tool name (e.g. "list_tasks")
+  toolDef: Omit<ToolDef, "ref" | "onError">;  // tool def without the function ref or per-tool error hook
+  args: Record<string, unknown>;
+  apiKey: string | undefined; // from the Authorization header; undefined if anonymous
+  phase: "before" | "success" | "error";
+  result?: unknown;           // present on "success"
+  error?: unknown;            // present on "error"
+  durationMs?: number;        // present on "success" and "error"
+  startedAt: number;          // ms timestamp of dispatch start
+}
+```
+
+---
+
+## `OnCallResult`
+
+```typescript
+interface OnCallResult {
+  abort?: boolean;             // before phase — skip dispatch, return error response
+  errorMessage?: string;       // before phase — message when aborting (default: "Tool call rejected")
+  message?: string;            // error phase — replace default error message
+  extendArgs?: Record<string, unknown>;  // before phase — merge into dispatched args (v0.3.0+)
+}
+```
+
+| Field | Phase | Description |
+|-------|-------|-------------|
+| `abort` | `before` | When `true`, framework returns an error response without dispatching. |
+| `errorMessage` | `before` | Custom abort message. Falls back to `"Tool call rejected"`. |
+| `message` | `error` | Replaces the framework's default `"Function execution failed"` text in the response. |
+| `extendArgs` | `before` | **(v0.3.0)** Server-resolved key/value pairs merged into the dispatched function's args. Server-side wins on collision. Only honored during the `before` phase. Empty / undefined is a no-op. Keys SHOULD use the framework-reserved `_` prefix. |
+
+### `extendArgs` example
+
+```typescript
+hooks: {
+  onToolCall: async ({ apiKey, phase }) => {
+    if (phase !== "before") return;
+    const validated = await validateKey(apiKey);
+    if (!validated.valid) return { abort: true, errorMessage: "Invalid key" };
+    return {
+      extendArgs: {
+        _mcp_apiKey: apiKey,
+        _mcp_scopes: validated.scopes,
+      },
+    };
+  },
+}
+```
+
+The dispatched action's validator must declare the injected fields as required args:
+
+```typescript
+export const sensitiveAction = action({
+  args: {
+    _mcp_apiKey: v.string(),     // injected by framework
+    _mcp_scopes: v.array(v.string()),
+    targetId: v.id("things"),
+  },
+  handler: async (ctx, args) => {
+    await assertMcpAuth(ctx, args._mcp_apiKey, "things:write");
+    // ... real logic ...
+  },
+});
+```
+
+---
+
+## Reserved `_` prefix in tool args (v0.3.0)
+
+Arg keys starting with underscore are framework-controlled. Two layers protect them:
+
+1. **Schema strip** — `prepareTools` removes `_*` keys from the published JSON Schema. The MCP SDK's Zod validator silently strips `_*` keys from incoming requests (Zod default strip mode), so spoofed values never reach the dispatched function.
+2. **Handler reject** — The registered tool handler explicitly rejects any `_*` key reaching it with a structured `"Reserved arg keys not allowed"` error before the hook runs. This defends against transports that bypass the SDK's schema validation (custom transports, future protocol changes, direct `registerTools` callers).
+
+Hook-supplied `_*` keys via `extendArgs` are exempt from both layers — the server is trusted by definition.
+
+See [Security › Server-side Context Propagation](./security.md#server-side-context-propagation-v030) for the full pattern.
+
+---
+
 ## `HandlerOptions`
 
 ```typescript
@@ -307,5 +415,8 @@ import type {
   ConvexMCPServer,
   FunctionType,     // "query" | "mutation" | "action"
   ConvexValidator,
+  LifecycleHooks,
+  CallContext,
+  OnCallResult,
 } from "@vllnt/convex-mcp";
 ```

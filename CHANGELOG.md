@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-04-25
+## [0.3.0] - 2026-04-27
+
+### Added
+
+- **Hook-driven request context propagation** ([#15](https://github.com/vllnt/convex-mcp/issues/15)) — The `onToolCall` hook can now return `extendArgs?: Record<string, unknown>` to merge server-resolved context into the dispatched function's args. Unblocks per-action authorization, request tracing, multi-tenancy, audit metadata, per-key feature flags, and any pattern where the server needs to inject trusted context the action can read ([#16](https://github.com/vllnt/convex-mcp/issues/16))
+- **Reserved `_` prefix for tool args** ([#17](https://github.com/vllnt/convex-mcp/issues/17)) — Arg keys starting with `_` are framework-controlled. Two layers protect them: (1) `prepareTools` strips `_*` keys from the published JSON Schema so MCP clients can't see or pass them; (2) the registered tool handler explicitly rejects any `_*` key that arrives at the handler boundary (defense-in-depth for non-SDK callers). Hook-supplied `_*` keys via `extendArgs` are exempt
+- **Construction-time warn for unhooked `_*` args** — `createMCPServer` emits a single `console.warn` when any tool declares reserved `_*` args but no `onToolCall` hook is configured, listing the affected tools and keys. Catches a footgun where stripped args would silently fail every dispatched call against Convex's validator
+- **Reserved-key reject log line** — `[convex-mcp] reserved-key reject` warn (with `requestId`, `tool`, `keys`) when the handler-layer reject fires, for operator visibility
+- 17 new tests in `tests/context-propagation.test.ts` covering merge precedence, no-op cases (undefined / empty `extendArgs`), abort precedence, phase isolation (only `before` honors `extendArgs`), schema stripping, reserved-key rejection at handler boundary, nested-key passthrough, end-to-end SDK schema-strip behavior, the new construction-time warn, and the reject log line
 
 ### Changed
 

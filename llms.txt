@@ -58,6 +58,14 @@ export const { GET, POST } = mcp.handler();
 - `tools/describe` with `{ name }` returns full tool definition on-demand
 - Cursors are HMAC-signed, constant-time verified, per-instance secret
 
+## Request Context Propagation (v0.3.0)
+
+- `OnCallResult.extendArgs` — Hook returns `{ extendArgs: { _key: value, ... } }` to merge server-resolved context into the dispatched function's args. Server-side wins on collision. Only `before` phase honors it. Empty / undefined is a no-op
+- **Reserved `_` prefix** — Arg keys starting with `_` are framework-controlled. Stripped from the published JSON Schema (clients can't see/pass them). Handler explicitly rejects any `_*` key reaching it (defense-in-depth)
+- **Defense-in-depth pattern** — Hook validates apiKey + scope (fast path) AND the action handler re-validates `args._mcp_apiKey` (safety net). Even if the framework hook is bypassed, action stays safe
+- **Use cases** — auth context, request tracing IDs, tenant routing, audit metadata, per-key feature flags, per-key quotas
+- See `docs/security.md` for production patterns
+
 ## Docs
 
 - [Getting Started](docs/getting-started.md)

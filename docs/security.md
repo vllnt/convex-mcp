@@ -184,3 +184,95 @@ An attacker with a valid API key could flood the endpoint with tool calls.
 - Rate limit at the infrastructure level.
 - Implement per-key rate limiting in `auth.validate`.
 - Monitor Convex function call volume and costs.
+
+## Server-side Context Propagation (v0.3.0)
+
+The `onToolCall` hook can inject server-resolved context into the dispatched function's args via `extendArgs`. This enables per-action authorization, tracing, multi-tenancy, audit metadata, and other patterns that need trusted server-side state inside the handler.
+
+### Defense in depth: hook + handler re-validation
+
+The framework hook is the fast path. The action handler re-validating is the safety net. Even if the hook is bypassed (regression, fork, or someone bypasses the framework entirely and calls the Convex function directly), the action denies the call.
+
+```ts
+// convex/mcp.ts — server config
+hooks: {
+  onToolCall: async ({ apiKey, phase, toolDef }) => {
+    if (phase !== "before") return;
+    const result = await validateKey(apiKey);
+    if (!result.valid) return { abort: true, errorMessage: "Invalid key" };
+    const requiredScope = toolDef.tags?.requiredScope;
+    if (requiredScope && !result.scopes.includes(requiredScope)) {
+      return { abort: true, errorMessage: `Missing scope: ${requiredScope}` };
+    }
+    return {
+      extendArgs: {
+        _mcp_apiKey: apiKey,
+        _mcp_scopes: result.scopes,
+      },
+    };
+  },
+}
+
+// convex/things.ts — Convex action with re-validation
+export const upsertThing = action({
+  args: {
+    _mcp_apiKey: v.string(),     // injected by framework, required
+    _mcp_scopes: v.array(v.string()),
+    targetId: v.id("things"),
+  },
+  handler: async (ctx, args) => {
+    // Defense-in-depth: re-validate on the action side
+    await assertMcpAuth(ctx, args._mcp_apiKey, "things:write");
+    // ...real logic with confidence the caller is authorized...
+  },
+});
+```
+
+### Hooks are fail-open — action validators are what make this safe
+
+`onToolCall` exceptions are caught and logged by the framework, then dispatch proceeds with the original args (no `abort`, no `extendArgs`). This is intentional: a transient failure inside an observability or auth-cache hook must not crash the server. But it has a security consequence:
+
+- If `validateKey(apiKey)` throws (DB blip, network error, code regression), the hook returns nothing.
+- Dispatch proceeds with the original request args.
+- `_mcp_apiKey` is **not** injected — the action receives whatever the client sent (which, for `_*` keys, is nothing — they were stripped or rejected).
+
+What makes this safe is the action validator. **Always declare framework-injected `_*` fields as required (non-optional) on the Convex action**:
+
+```ts
+args: {
+  _mcp_apiKey: v.string(),                  // required — Convex rejects the call if missing
+  _mcp_scopes: v.array(v.string()),         // required
+  targetId: v.id("things"),
+}
+```
+
+If the hook throws or is bypassed, Convex's own validator rejects the call before the handler runs. If you mark `_mcp_apiKey` as `v.optional(v.string())` you delete the safety net — the handler will execute with `args._mcp_apiKey === undefined` and any code path reading it must explicitly handle that case. **Don't.**
+
+### Reserved `_` prefix — non-negotiable
+
+Arg keys starting with `_` are framework-controlled. The framework protects them with two layers:
+
+1. **Schema strip** — `prepareTools` removes `_*` keys from the published JSON Schema. MCP clients see only consumer-defined args. The MCP SDK's Zod validator silently strips `_*` keys from incoming requests (Zod default strip mode), so spoofed values never reach the handler.
+2. **Handler reject** — If a request reaches the registered tool handler with `_*` keys (e.g., a custom transport that bypasses the SDK's schema validation), the handler returns a structured "Reserved arg keys not allowed" error before the hook runs.
+
+Hook-supplied `_*` keys via `extendArgs` are exempt from both layers — the server is trusted.
+
+### Other patterns
+
+| Pattern | Hook returns | Action receives |
+|---|---|---|
+| **Request tracing** | `{ extendArgs: { _mcp_requestId: ctx.requestId } }` | Threads framework's `requestId` into action audit logs |
+| **Multi-tenancy** | `{ extendArgs: { _mcp_tenantId: resolveTenant(apiKey) } }` | Server-resolved tenant ID enforced via `withIndex("by_tenant", q => q.eq("tenantId", args._mcp_tenantId))` — caller cannot spoof |
+| **Per-key feature flags** | `{ extendArgs: { _mcp_flags: getFlagsFor(apiKey) } }` | Branches behavior per caller without re-fetching from DB |
+| **Audit metadata** | `{ extendArgs: { _mcp_callerLabel: keyMetadata.label } }` | Recorded in domain audit log |
+
+### Anti-patterns (DON'T)
+
+- **Don't put long-lived secrets in `extendArgs`** — values flow into args, may end up in action logs, may be over-shared. Only inject context that's safe to log.
+- **Don't rely solely on the hook for authorization** — without action-side re-validation, a framework regression or bypass becomes a security blind spot.
+- **Don't spread context across `extendArgs` AND a side-channel store** — pick one. The args path is canonical.
+- **Don't allow client `_*` passthrough** — the reject is what makes `extendArgs` safe. Don't disable it.
+
+### Override semantics on key collision
+
+When `extendArgs` and request args share a key, **`extendArgs` wins**. This matters when the consumer chooses to override request data with server-resolved values (e.g., `tenantId` resolved server-side overrides any caller-supplied tenantId). For `_*` keys this is moot — they can't appear in request args.

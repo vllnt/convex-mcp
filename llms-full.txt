@@ -230,6 +230,7 @@ interface ServerConfig {
   name?: string;
   version?: string;
   pagination?: PaginationConfig;
+  hooks?: LifecycleHooks;          // v0.3.0+
 }
 
 interface PaginationConfig {
@@ -247,12 +248,39 @@ interface ToolDef {
   type: "query" | "mutation" | "action";
   args?: ConvexValidator;          // Convex v.object() validator
   description?: string;
+  tags?: Record<string, string>;   // arbitrary metadata visible in CallContext.toolDef.tags
+  timeout?: number;                // ms before the dispatch is aborted
+  onError?: (ctx: CallContext & { phase: "error" }) => Promise<OnCallResult | void> | OnCallResult | void;
 }
 
 interface ResourceDef {
   ref: unknown;                    // Convex function reference (must be a query)
   args?: ConvexValidator;
   description?: string;
+}
+
+interface LifecycleHooks {
+  onToolCall?: (ctx: CallContext) => Promise<OnCallResult | void> | OnCallResult | void;
+}
+
+interface CallContext {
+  requestId: string;               // crypto.randomUUID(), shared across before/success/error for one tool call
+  toolName: string;
+  toolDef: Omit<ToolDef, "ref" | "onError">;
+  args: Record<string, unknown>;
+  apiKey: string | undefined;
+  phase: "before" | "success" | "error";
+  result?: unknown;                // present on "success"
+  error?: unknown;                 // present on "error"
+  durationMs?: number;             // present on "success" and "error"
+  startedAt: number;
+}
+
+interface OnCallResult {
+  abort?: boolean;                 // before phase — skip dispatch, return error response
+  errorMessage?: string;           // before phase — message when aborting (default: "Tool call rejected")
+  message?: string;                // error phase — replace default error text ("Function execution failed")
+  extendArgs?: Record<string, unknown>;  // v0.3.0+ — merge into dispatched args; server-side wins on collision
 }
 
 interface ConvexMCPServer {
@@ -264,6 +292,94 @@ interface ConvexMCPServer {
 
 type FunctionType = "query" | "mutation" | "action";
 ```
+
+---
+
+## Lifecycle Hooks & Request Context Propagation
+
+The `onToolCall` hook fires three times per tool call: `before` (pre-dispatch), `success` (after the dispatched function resolves), and `error` (after it throws). The `before` phase is the only one whose return value affects dispatch.
+
+### Hook return shape (`OnCallResult`)
+
+| Field | Phase | Effect |
+|-------|-------|--------|
+| `abort` | `before` | When `true`, framework returns an error response without dispatching. |
+| `errorMessage` | `before` | Custom abort message. Default: `"Tool call rejected"`. |
+| `message` | `error` | Replaces default `"Function execution failed"` text. |
+| `extendArgs` | `before` | (v0.3.0+) Server-resolved key/value pairs merged into the dispatched function's args. Server-side wins on collision. Empty / undefined is a no-op. |
+
+### Per-tool `onError` override
+
+Tools can declare their own error hook via `ToolDef.onError`. When set, it runs INSTEAD OF `LifecycleHooks.onToolCall` for the `error` phase of that tool. Useful for per-tool error redaction.
+
+### Request Context Propagation (v0.3.0)
+
+The `extendArgs` field unblocks server-side context injection. Common patterns:
+
+```typescript
+// Per-action authorization with defense-in-depth
+hooks: {
+  onToolCall: async ({ apiKey, phase, toolDef }) => {
+    if (phase !== "before") return;
+    const validated = await validateKey(apiKey);
+    if (!validated.valid) return { abort: true, errorMessage: "Invalid key" };
+    const required = toolDef.tags?.requiredScope;
+    if (required && !validated.scopes.includes(required)) {
+      return { abort: true, errorMessage: `Missing scope: ${required}` };
+    }
+    return {
+      extendArgs: {
+        _mcp_apiKey: apiKey,
+        _mcp_scopes: validated.scopes,
+      },
+    };
+  },
+}
+```
+
+The dispatched action's validator must declare the injected fields:
+
+```typescript
+export const upsertThing = action({
+  args: {
+    _mcp_apiKey: v.string(),     // injected by framework
+    _mcp_scopes: v.array(v.string()),
+    targetId: v.id("things"),
+  },
+  handler: async (ctx, args) => {
+    // Defense-in-depth: re-validate the injected key inside the action.
+    // Even if the framework hook is bypassed, the action stays safe.
+    await assertMcpAuth(ctx, args._mcp_apiKey, "things:write");
+    // ... real logic with confidence the caller is authorized ...
+  },
+});
+```
+
+### Other patterns
+
+| Pattern | `extendArgs` | Action receives |
+|---------|--------------|-----------------|
+| Request tracing | `{ _mcp_requestId: ctx.requestId }` | Threads framework's requestId into action audit logs |
+| Multi-tenancy | `{ _mcp_tenantId: resolveTenant(apiKey) }` | Server-resolved tenant ID enforced via index queries |
+| Per-key feature flags | `{ _mcp_flags: getFlagsFor(apiKey) }` | Branches behavior per caller |
+| Per-key quotas | `{ _mcp_quotaRemaining: n }` | Enforces or warns near limit |
+| Audit metadata | `{ _mcp_callerLabel: keyMetadata.label }` | Recorded in domain audit log |
+
+### Reserved `_` prefix (v0.3.0)
+
+Arg keys starting with `_` are framework-controlled. Two protection layers:
+
+1. **Schema strip** — `prepareTools` removes `_*` keys from the published JSON Schema. The MCP SDK's Zod validator silently strips `_*` keys from incoming requests (Zod default strip mode).
+2. **Handler reject** — The registered tool handler explicitly rejects any `_*` key reaching it with `"Reserved arg keys not allowed: ..."` before the hook runs. Defense-in-depth for non-SDK transports.
+
+Hook-supplied `_*` keys via `extendArgs` are exempt — the server is trusted.
+
+### Anti-patterns
+
+- DON'T put long-lived secrets in `extendArgs` — values flow into args, may end up in action logs.
+- DON'T rely solely on the hook for authorization — without action-side re-validation, a framework regression becomes a security blind spot.
+- DON'T spread context across `extendArgs` AND a side-channel store — pick one. The args path is canonical.
+- DON'T allow client `_*` passthrough — the reject is what makes `extendArgs` safe.
 
 ---
 
