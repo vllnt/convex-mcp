@@ -1,1 +1,2 @@
 2026-03-22 | shipped | convex-mcp | 8h→6h | 6h | Init @vllnt/convex-mcp package — expose Convex functions as MCP tools via Streamable HTTP
+2026-04-27 | shipped | lifecycle-hooks | 2h→3h | 3h | Lifecycle hooks + per-tool config + observability + v0.3.0 extendArgs / reserved `_` prefix
