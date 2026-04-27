@@ -322,3 +322,149 @@ export const { GET, POST } = adminMcp.handler();
 import { publicMcp } from "@/convex/mcp-public";
 export const { GET, POST } = publicMcp.handler();
 ```
+
+## Hook-driven request context propagation (v0.3.0)
+
+The `onToolCall` hook can return `extendArgs` to inject server-resolved context into the dispatched function's args. Combined with the framework-reserved `_` prefix, this gives you a safe channel for per-action authorization, request tracing, multi-tenancy, audit metadata, and more.
+
+### Per-action authorization (defense-in-depth)
+
+The framework hook validates the apiKey + required scope. The action handler **re-validates** the injected key — so even if the hook is bypassed (custom transport, framework regression), the action stays safe.
+
+```typescript
+// convex/mcp.ts
+import { createMCPServer, action } from "@vllnt/convex-mcp";
+import { api } from "./_generated/api";
+import { v } from "convex/values";
+
+export const mcp = createMCPServer({
+  auth: { validate: async (key) => Boolean(await validateKey(key)) },
+  hooks: {
+    onToolCall: async ({ apiKey, phase, toolDef }) => {
+      if (phase !== "before") return;
+      const validated = await validateKey(apiKey);
+      if (!validated.valid) return { abort: true, errorMessage: "Invalid key" };
+      const required = toolDef.tags?.requiredScope;
+      if (required && !validated.scopes.includes(required)) {
+        return { abort: true, errorMessage: `Missing scope: ${required}` };
+      }
+      return {
+        extendArgs: {
+          _mcp_apiKey: apiKey,
+          _mcp_scopes: validated.scopes,
+        },
+      };
+    },
+  },
+  tools: {
+    upsert_thing: action(api.things.upsert, {
+      args: v.object({
+        _mcp_apiKey: v.string(),     // injected by framework
+        _mcp_scopes: v.array(v.string()),
+        targetId: v.id("things"),
+        payload: v.any(),
+      }),
+      description: "Upsert a thing.",
+      tags: { requiredScope: "things:write" },
+    }),
+  },
+});
+
+// convex/things.ts
+export const upsert = action({
+  args: {
+    _mcp_apiKey: v.string(),
+    _mcp_scopes: v.array(v.string()),
+    targetId: v.id("things"),
+    payload: v.any(),
+  },
+  handler: async (ctx, args) => {
+    // Defense-in-depth: re-validate inside the action.
+    await assertMcpAuth(ctx, args._mcp_apiKey, "things:write");
+    return await ctx.runMutation(internal.things.write, {
+      id: args.targetId,
+      payload: args.payload,
+    });
+  },
+});
+```
+
+### Request tracing
+
+```typescript
+hooks: {
+  onToolCall: async ({ requestId, phase }) => {
+    if (phase !== "before") return;
+    return { extendArgs: { _mcp_requestId: requestId } };
+  },
+}
+
+// In the action — correlate domain logs with framework request lifecycle:
+export const doThing = action({
+  args: { _mcp_requestId: v.string(), input: v.string() },
+  handler: async (ctx, args) => {
+    logger.info("doing_thing", { requestId: args._mcp_requestId, input: args.input });
+    // ...
+  },
+});
+```
+
+### Multi-tenancy with server-resolved tenant routing
+
+```typescript
+hooks: {
+  onToolCall: async ({ apiKey, phase }) => {
+    if (phase !== "before") return;
+    const tenantId = await resolveTenantFromKey(apiKey);
+    if (!tenantId) return { abort: true, errorMessage: "Unknown tenant" };
+    return { extendArgs: { _mcp_tenantId: tenantId } };
+  },
+}
+
+// Action enforces server-resolved tenant ID — caller cannot spoof:
+export const listProjects = query({
+  args: { _mcp_tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_tenant", (q) => q.eq("tenantId", args._mcp_tenantId))
+      .take(50);
+  },
+});
+```
+
+### Per-key feature flags
+
+```typescript
+hooks: {
+  onToolCall: async ({ apiKey, phase }) => {
+    if (phase !== "before") return;
+    const flags = await getFlagsFor(apiKey);  // cached lookup
+    return { extendArgs: { _mcp_flags: flags } };
+  },
+}
+
+// Action branches on flags without re-fetching:
+export const search = query({
+  args: {
+    _mcp_flags: v.object({ semanticSearch: v.boolean() }),
+    q: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return args._mcp_flags.semanticSearch
+      ? await semanticSearch(ctx, args.q)
+      : await keywordSearch(ctx, args.q);
+  },
+});
+```
+
+### Anti-patterns
+
+| Anti-pattern | Why bad | Fix |
+|---|---|---|
+| Long-lived secrets in `extendArgs` | Args flow into action logs and may be over-shared | Inject ID + scopes only; resolve secrets inside the action when needed |
+| Hook-only authorization (no action re-check) | Framework regression / fork = silent security failure | Always re-validate the injected key inside the action handler |
+| Splitting context across `extendArgs` AND a side-channel store | Two sources of truth; drift inevitable | Pick one — `extendArgs` is the canonical path |
+| Allowing client `_*` passthrough (e.g., disabling the reject) | Defeats the entire safety model | Don't. The reject is what makes `extendArgs` trustworthy |
+
+See [Security › Server-side Context Propagation](./security.md#server-side-context-propagation-v030) for the full security rationale.
