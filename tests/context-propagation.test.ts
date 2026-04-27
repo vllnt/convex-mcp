@@ -15,8 +15,8 @@ import type { CallContext, ConvexValidator } from "../src/types.js";
 
 const MOCK_CONVEX_URL = "https://test-deployment.convex.cloud";
 
-function makeValidator(kind: string, extra: Record<string, unknown> = {}): ConvexValidator {
-  return { kind, isOptional: "required", ...extra } as ConvexValidator;
+function makeValidator(kind: string, extra: Partial<ConvexValidator> = {}): ConvexValidator {
+  return { kind, isOptional: "required", ...extra } satisfies ConvexValidator;
 }
 
 vi.mock("convex/browser", () => {
@@ -495,5 +495,159 @@ describe("context propagation: schema stripping", () => {
     expect(listTool).toBeDefined();
     expect(Object.keys(listTool?.inputSchema.properties ?? {})).toEqual(["userArg"]);
     expect(listTool?.inputSchema.required ?? []).toEqual(["userArg"]);
+  });
+});
+
+describe("findToolsWithReservedArgs", () => {
+  it("returns tools whose top-level args contain reserved `_*` keys", async () => {
+    const { findToolsWithReservedArgs } = await import("../src/tools/register.js");
+    const result = findToolsWithReservedArgs({
+      hasReserved: query(null, {
+        args: makeValidator("object", {
+          fields: { _mcp_apiKey: makeValidator("string"), userArg: makeValidator("string") },
+        }),
+        description: "with reserved",
+      }),
+      noReserved: query(null, {
+        args: makeValidator("object", { fields: { userArg: makeValidator("string") } }),
+        description: "no reserved",
+      }),
+      noArgs: query(null, { description: "no args" }),
+      nonObjectArgs: query(null, {
+        args: makeValidator("string"),
+        description: "non-object args",
+      }),
+      emptyFields: query(null, {
+        args: makeValidator("object"),
+        description: "no fields",
+      }),
+    });
+
+    expect(Array.from(result.entries())).toEqual([["hasReserved", ["_mcp_apiKey"]]]);
+  });
+});
+
+describe("construction-time warn for unhooked `_*` args", () => {
+  it("warns when tools declare `_*` args but no onToolCall hook is configured", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      createMCPServer({
+        auth: { validate: async () => true },
+        convexUrl: MOCK_CONVEX_URL,
+        tools: {
+          tool1: query(null, {
+            args: makeValidator("object", { fields: { _mcp_apiKey: makeValidator("string") } }),
+            description: "tool1",
+          }),
+          tool2: query(null, {
+            args: makeValidator("object", {
+              fields: {
+                _mcp_tenantId: makeValidator("string"),
+                _mcp_scope: makeValidator("string"),
+                userArg: makeValidator("string"),
+              },
+            }),
+            description: "tool2",
+          }),
+        },
+      });
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const message = warnSpy.mock.calls[0]?.[0];
+      expect(message).toContain("no onToolCall hook is configured");
+      expect(message).toContain("tool1 (_mcp_apiKey)");
+      expect(message).toContain("tool2 (_mcp_tenantId, _mcp_scope)");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn when an onToolCall hook is configured", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      createMCPServer({
+        auth: { validate: async () => true },
+        convexUrl: MOCK_CONVEX_URL,
+        hooks: { onToolCall: async () => undefined },
+        tools: {
+          tool1: query(null, {
+            args: makeValidator("object", { fields: { _mcp_apiKey: makeValidator("string") } }),
+            description: "tool1",
+          }),
+        },
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn when no tools declare `_*` args", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      createMCPServer({
+        auth: { validate: async () => true },
+        convexUrl: MOCK_CONVEX_URL,
+        tools: {
+          tool1: query(null, {
+            args: makeValidator("object", { fields: { userArg: makeValidator("string") } }),
+            description: "tool1",
+          }),
+        },
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe("reserved-key reject logging", () => {
+  it("logs a structured warn line when handler-layer reject fires", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { registerTools, prepareTools } = await import("../src/tools/register.js");
+      type ToolHandler = (args: Record<string, unknown>) => Promise<{ isError?: boolean; content: { text: string }[] }>;
+
+      const mockClient = await getMockClient();
+      const captured: { handler?: ToolHandler } = {};
+      const fakeServer = {
+        tool: (_name: string, _desc: string, _shape: unknown, h: ToolHandler) => {
+          captured.handler = h;
+        },
+      };
+
+      const prepared = prepareTools({
+        list: query(null, {
+          args: makeValidator("object", { fields: { _mcp_apiKey: makeValidator("string") } }),
+          description: "list",
+        }),
+      });
+      registerTools(
+        fakeServer as unknown as Parameters<typeof registerTools>[0],
+        mockClient as unknown as Parameters<typeof registerTools>[1],
+        prepared,
+        undefined,
+        "rid-42",
+        undefined,
+      );
+
+      const handler = captured.handler;
+      if (!handler) throw new Error("registerTools did not register a handler");
+      await handler({ _mcp_apiKey: "spoofed", _mcp_scope: "x" });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[convex-mcp] reserved-key reject",
+        expect.objectContaining({
+          requestId: "rid-42",
+          tool: "list",
+          keys: ["_mcp_apiKey", "_mcp_scope"],
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

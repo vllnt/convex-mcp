@@ -48,6 +48,26 @@ export function prepareTools(tools: Record<string, ToolDef>): PreparedTool[] {
   });
 }
 
+/**
+ * Returns tools whose top-level args contain reserved `_*` keys.
+ *
+ * Used by `createMCPServer` at construction to surface a footgun: a tool that
+ * declares `_*` args without an `onToolCall` hook will have those args stripped
+ * from the published schema and never injected, so every dispatched call will
+ * fail Convex's own validator with "missing required arg".
+ */
+export function findToolsWithReservedArgs(
+  tools: Record<string, ToolDef>,
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  for (const [name, toolDef] of Object.entries(tools)) {
+    if (toolDef.args?.kind !== "object" || !toolDef.args.fields) continue;
+    const reserved = Object.keys(toolDef.args.fields).filter(isReservedKey);
+    if (reserved.length > 0) result.set(name, reserved);
+  }
+  return result;
+}
+
 async function invokeHook(
   hooks: LifecycleHooks | undefined,
   ctx: CallContext,
@@ -108,6 +128,11 @@ export function registerTools(
 
         const reservedKeys = Object.keys(args).filter(isReservedKey);
         if (reservedKeys.length > 0) {
+          console.warn("[convex-mcp] reserved-key reject", {
+            requestId,
+            tool: name,
+            keys: reservedKeys,
+          });
           return {
             content: [
               {

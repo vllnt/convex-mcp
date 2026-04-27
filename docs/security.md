@@ -228,6 +228,26 @@ export const upsertThing = action({
 });
 ```
 
+### Hooks are fail-open — action validators are what make this safe
+
+`onToolCall` exceptions are caught and logged by the framework, then dispatch proceeds with the original args (no `abort`, no `extendArgs`). This is intentional: a transient failure inside an observability or auth-cache hook must not crash the server. But it has a security consequence:
+
+- If `validateKey(apiKey)` throws (DB blip, network error, code regression), the hook returns nothing.
+- Dispatch proceeds with the original request args.
+- `_mcp_apiKey` is **not** injected — the action receives whatever the client sent (which, for `_*` keys, is nothing — they were stripped or rejected).
+
+What makes this safe is the action validator. **Always declare framework-injected `_*` fields as required (non-optional) on the Convex action**:
+
+```ts
+args: {
+  _mcp_apiKey: v.string(),                  // required — Convex rejects the call if missing
+  _mcp_scopes: v.array(v.string()),         // required
+  targetId: v.id("things"),
+}
+```
+
+If the hook throws or is bypassed, Convex's own validator rejects the call before the handler runs. If you mark `_mcp_apiKey` as `v.optional(v.string())` you delete the safety net — the handler will execute with `args._mcp_apiKey === undefined` and any code path reading it must explicitly handle that case. **Don't.**
+
 ### Reserved `_` prefix — non-negotiable
 
 Arg keys starting with `_` are framework-controlled. The framework protects them with two layers:
