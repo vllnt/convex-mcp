@@ -5,7 +5,7 @@ import { validateRequest } from "./auth.js";
 import { createPaginationContext } from "./pagination/context.js";
 import { getOriginalToolsList, registerPaginationHandlers, registerTwoPhaseHandlers } from "./pagination/handlers.js";
 import { prepareResources, registerResources } from "./resources/register.js";
-import { prepareTools, registerTools } from "./tools/register.js";
+import { findToolsWithReservedArgs, prepareTools, registerTools } from "./tools/register.js";
 import type { ConvexClient, ConvexMCPServer, ServerConfig } from "./types.js";
 
 function createDefaultClient(convexUrl: string, convexToken?: string): ConvexClient {
@@ -61,6 +61,21 @@ export function createMCPServer(config: ServerConfig): ConvexMCPServer {
   const prepared = prepareTools(config.tools ?? {});
   const preparedRes = prepareResources(config.resources ?? {});
   const paginationCtx = createPaginationContext(config.pagination);
+
+  if (!hooks?.onToolCall) {
+    const stripped = findToolsWithReservedArgs(config.tools ?? {});
+    if (stripped.size > 0) {
+      const summary = Array.from(stripped.entries())
+        .map(([tool, keys]) => `${tool} (${keys.join(", ")})`)
+        .join("; ");
+      console.warn(
+        `[convex-mcp] tools declare reserved \`_*\` args but no onToolCall hook is configured. ` +
+        `These args are stripped from the published schema and will never be injected, ` +
+        `so every dispatched call will fail Convex validation. ` +
+        `Configure hooks.onToolCall to inject them via extendArgs. Affected tools: ${summary}`,
+      );
+    }
+  }
 
   function createServerAndTransport(
     requestId: string,
