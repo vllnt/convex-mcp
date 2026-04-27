@@ -11,13 +11,38 @@ interface PreparedTool {
   toolDef: ToolDef;
 }
 
+/**
+ * Underscore-prefixed arg keys are reserved for framework-injected context.
+ *
+ * - Request args containing `_*` keys are rejected before hook invocation.
+ * - Tool-level Convex validators MAY declare `_*` fields so the action
+ *   handler receives server-injected values; these are stripped from the
+ *   published JSON Schema so MCP clients neither see nor pass them.
+ */
+function isReservedKey(key: string): boolean {
+  return key.startsWith("_");
+}
+
+function stripReservedFromShape(
+  shape: Record<string, z.ZodTypeAny>,
+): Record<string, z.ZodTypeAny> {
+  const filtered: Record<string, z.ZodTypeAny> = {};
+  for (const [key, value] of Object.entries(shape)) {
+    if (!isReservedKey(key)) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
 export function prepareTools(tools: Record<string, ToolDef>): PreparedTool[] {
   return Object.entries(tools).map(([name, toolDef]) => {
     const zodSchema = toolDef.args ? convexArgsToZod(toolDef.args) : undefined;
+    const fullShape = zodSchema?.shape ?? {};
     return {
       name,
       description: toolDef.description ?? "",
-      zodShape: zodSchema?.shape ?? {},
+      zodShape: stripReservedFromShape(fullShape),
       toolDef,
     };
   });
@@ -81,6 +106,21 @@ export function registerTools(
         const startedAt = Date.now();
         const { ref: _ref, onError: _onError, ...safeDef } = toolDef;
 
+        const reservedKeys = Object.keys(args).filter(isReservedKey);
+        if (reservedKeys.length > 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  `Reserved arg keys not allowed in request: ${reservedKeys.join(", ")}. ` +
+                  `Keys starting with "_" are reserved for framework-injected context.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const baseCtx = {
           requestId,
           toolName: name,
@@ -99,15 +139,20 @@ export function registerTools(
           };
         }
 
+        const dispatchArgs =
+          beforeResult?.extendArgs && Object.keys(beforeResult.extendArgs).length > 0
+            ? { ...args, ...beforeResult.extendArgs }
+            : args;
+
         try {
           const callPromise = (async () => {
             switch (toolDef.type) {
               case "query":
-                return await client.query(toolDef.ref, args);
+                return await client.query(toolDef.ref, dispatchArgs);
               case "mutation":
-                return await client.mutation(toolDef.ref, args);
+                return await client.mutation(toolDef.ref, dispatchArgs);
               case "action":
-                return await client.action(toolDef.ref, args);
+                return await client.action(toolDef.ref, dispatchArgs);
               default:
                 throw new Error(`Unknown function type: ${String(toolDef.type)}`);
             }
