@@ -2,6 +2,15 @@
 
 > Expose Convex functions as MCP tools via Streamable HTTP — with opt-in pagination and two-phase discovery
 
+## Legacy status
+
+For new integrations use `@vllnt/convex-helpers/mcp` (available in helpers 0.1.0).
+See [migration and dependency differences](README.md#legacy-package-and-migration).
+Helpers is ESM-only, requires Convex ^1.45.0, and needs explicit MCP SDK ^1.29.0
+and Zod ^4.3.6 optional peers. This repository is not archived and the legacy npm
+package is not deprecated at this audit. The reference below describes legacy
+0.3.1, not all behavior of the replacement. Test migration before removing it.
+
 ## Overview
 
 `@vllnt/convex-mcp` turns Convex queries, mutations, and actions into MCP (Model Context Protocol) tools that any LLM client can call. Convex validators are automatically converted to JSON Schema for tool definitions. Auth is mandatory (default-deny). Supports cursor-based pagination and two-phase tool discovery for large tool catalogs.
@@ -74,7 +83,6 @@ export const { GET, POST } = mcp.handler();
 - [Deployment](docs/deployment.md)
 - [Security](docs/security.md)
 - [Examples](docs/examples.md)
-- [Full LLM Context](llms-full.txt)
 
 ## Optional
 

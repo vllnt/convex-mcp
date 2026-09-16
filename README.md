@@ -5,9 +5,31 @@
 
 Expose Convex functions as MCP tools with zero boilerplate. Connect any LLM to your Convex backend via the Model Context Protocol.
 
-## Why
+## Legacy package and migration
 
-No Convex MCP package exists that exposes **your** functions as MCP tools. Existing packages are dev-inspection tools. This package lets you turn any Convex query, mutation, or action into an MCP tool in minutes.
+For new integrations, use [`@vllnt/convex-helpers/mcp`](https://github.com/vllnt/convex-helpers#mcp-tools--mcp).
+The MCP surface now lives in that host-side helpers library, not a sandboxed
+component. This repository remains public and **is not archived**, and npm
+`@vllnt/convex-mcp` **is not deprecated**, at this audit. The instructions below
+still describe the legacy `0.3.1` package; migration is not retirement completed.
+
+```bash
+pnpm add @vllnt/convex-helpers@0.1.0 convex@^1.45.0 @modelcontextprotocol/sdk@^1.29.0 zod@^4.3.6
+```
+
+Change imports from `@vllnt/convex-mcp` to `@vllnt/convex-helpers/mcp`.
+Helpers `0.1.0` already exports MCP; its newer identity/origin helpers require
+canary and are not needed for this migration. Key differences:
+
+- Helpers requires `convex@^1.45.0`; legacy declares `convex>=1.0.0`.
+- MCP SDK and Zod are optional peers in helpers: install them explicitly.
+- Helpers is ESM-only; legacy also ships CommonJS. Adapt CommonJS consumers first.
+- Review the destination's [API and security behavior](https://github.com/vllnt/convex-helpers/blob/main/docs/API.md)
+  for the selected version; do not assume matching wrapper names guarantee identical callback behavior.
+
+Test authentication, authorization, hooks, resources and pagination before removing
+the legacy dependency. npm `latest` here is stable `0.3.1`; `canary` is a moving
+prerelease channel (`0.3.1-canary.b5cb866` at this audit).
 
 ## Install
 
@@ -182,9 +204,14 @@ Convex validators are automatically converted to JSON Schema for MCP tool defini
 
 - **Validator duplication**: You must provide Convex validators in the MCP config alongside function references. FunctionReference carries no runtime schema info. We're exploring codegen for v2.
 - **Service account model**: By default, Convex functions execute without user identity (`ctx.auth` is null). Use `convexToken` in auth config to propagate identity, or `extendArgs` for arg-level context propagation (v0.3.0).
-- **Serverless timeouts**: Vercel Hobby has 10s timeout, Pro has 60s. Use Fluid Compute for long-running actions.
+- **Serverless timeouts**: execution limits depend on your hosting plan and runtime.
+  Check the provider's current limits and configure deadlines for long-running actions.
 
 ## Docs
+
+- [Changelog](CHANGELOG.md) · [LLM index](llms.txt)
+- [Security policy and private reporting](SECURITY.md)
+- [Issues](https://github.com/vllnt/convex-mcp/issues) for non-sensitive bugs
 
 - [Getting Started](docs/getting-started.md)
 - [API Reference](docs/api-reference.md)
