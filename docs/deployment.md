@@ -36,31 +36,29 @@ Your MCP endpoint is live at `https://your-app.vercel.app/api/mcp`.
 
 MCP tool calls execute Convex functions via `ConvexHttpClient`, which makes HTTP requests to the Convex backend. The total request time is bounded by both the serverless function timeout and the Convex function execution time.
 
-### Vercel timeouts
+### Hosting and backend limits
 
-| Plan | Max Duration | Notes |
-|------|-------------|-------|
-| Hobby | 10 seconds | Sufficient for simple queries/mutations |
-| Pro | 60 seconds | Covers most use cases |
-| Pro + Fluid Compute | 800 seconds | Required for long-running actions |
+Vercel duration limits depend on the plan, runtime, Fluid Compute configuration,
+and route settings. Consult the current [Vercel function duration documentation](https://vercel.com/docs/functions/configuring-functions/duration)
+rather than assuming a fixed timeout for a plan.
 
-### Convex function limits
-
-- **Queries/Mutations**: Complete in under 1 second typically
-- **Actions**: Can run up to 10 minutes (Convex limit), but your serverless function must stay alive long enough to receive the result
+Convex imposes its own [function execution limits](https://docs.convex.dev/production/state/limits).
+The hosting request must remain alive long enough to receive the backend response;
+a longer backend allowance does not extend the hosting timeout.
 
 ### Recommendations
 
-- **Queries and mutations**: Work fine on any Vercel plan.
-- **Short actions** (<10s): Work on Hobby plan.
-- **Long actions** (10s-60s): Require Vercel Pro.
-- **Very long actions** (>60s): Require Vercel Pro with Fluid Compute, or consider restructuring as background jobs.
+- Measure end-to-end query, mutation, and action duration in your deployment.
+- Configure route deadlines within your provider's current allowance, leaving
+  room for authentication, network latency, and response serialization.
+- For work that exceeds a request's deadline, consider a host-owned background
+  workflow and a separate status query instead of keeping the MCP request open.
 
 To set max duration for a Next.js route:
 
 ```typescript
 // app/api/mcp/route.ts
-export const maxDuration = 60; // seconds (requires Pro plan)
+export const maxDuration = 60; // example seconds; verify your deployment permits this
 ```
 
 ## Environment variables
