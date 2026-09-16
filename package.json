@@ -22,8 +22,7 @@
     "dist",
     "LICENSE",
     "README.md",
-    "llms.txt",
-    "llms-full.txt"
+    "llms.txt"
   ],
   "scripts": {
     "build": "tsup",
